@@ -1,13 +1,19 @@
 # TelegramDigestBot
 
 ### Description
-Telegram bot that parses
-
+Telegram bot that parses channels and sends a selection of the best posts (digest) on request or on schedule.
 
 ### How to run
 
-...
+`sudo apt install python3.10-venv`
 
+`python3 -m venv telegram-digest-bot`
+
+`source telegram-digest-bot/bin/activate`
+
+`pip3 install -r requirments.txt`
+
+`python3 main.py`
 
 ### Team roles
 1. Dev-ops engineer, teamlead (Maxim)
@@ -29,6 +35,6 @@ Telegram bot that parses
 9. It should be possible to adjust the number of posts issued in each group.
 10. TO BE CONTINUED...
 
-### Release notes
+### Bot interaction scheme
 
-...
+https://drive.google.com/file/d/1-Mi75xAAayMzNbt7QQGpYKUTSnwnRHZr/view?usp=sharing
