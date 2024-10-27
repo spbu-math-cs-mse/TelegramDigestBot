@@ -162,5 +162,7 @@ cython_debug/
 .idea/
 
 
-# Telegram bot token
+# Telegram stuff
 token.txt
+credentials.txt
+*.session
