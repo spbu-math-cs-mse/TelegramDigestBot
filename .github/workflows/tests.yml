@@ -11,7 +11,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install dependencies
+      - name: Install dependencies in telegram-bot
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r code/telegram-bot/requirements.txt
+      - name: Install dependencies in tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r code/tests/requirements.txt
+      - name: Install dependencies in recomendation-system
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r code/recomendation-system/requirements.txt
