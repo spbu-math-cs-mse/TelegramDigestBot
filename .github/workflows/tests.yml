@@ -15,10 +15,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r code/telegram-bot/requirements.txt
-      - name: Install dependencies in tests
+      - name: Install dependencies in test
         run: |
           python -m pip install --upgrade pip
-          pip install -r code/tests/requirements.txt
+          pip install -r code/test/requirements.txt
       - name: Install dependencies in recomendation-system
         run: |
           python -m pip install --upgrade pip
