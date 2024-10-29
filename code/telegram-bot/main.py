@@ -21,9 +21,9 @@ command_list_help = ["/start - начать работу",
                      "/settings - вывести команды для пользовательских настроек",
                      "/exit - завершить работу"]
 
-command_list_settings = ["/add <тег канала> - подключить канал к дайджесту",
+command_list_settings = ["/add <id канала> - подключить канал к дайджесту",
                          "/getlist - получить список подключенных каналов",
-                         "/del <тег канала> - отключить канал от дайджеста"]
+                         "/del <id канала> - отключить канал от дайджеста"]
 
 is_started = False
 
@@ -71,6 +71,12 @@ async def forward_messages(channel_id, user_id, messages):
 def digest_bot(message):
     if not is_started:
         return
+
+    if len(channel_ids) == 0:
+        bot.send_message(message.from_user.id, "Список каналов пуст! "
+                                               "Воспользуйтесь командой /add, чтобы добавить канал.")
+        return
+
     bot.send_message(message.from_user.id, "Дайджест на сегодня:")
     for channel_id in channel_ids:
         messages = user_loop.run_until_complete(get_messages(channel_id, 3))
@@ -90,10 +96,12 @@ def add_bot(message):
         return
     message_args = message.text.split()
     if len(message_args) != 2:
-        bot.send_message(message.from_user.id, "Некорректные входные данные!")
+        bot.send_message(message.from_user.id, "Некорректные входные данные! Формат: /add <id канала>.")
         return
     channel_id = message_args[1]
     channel_ids.add(channel_id)
+    bot.send_message(message.from_user.id, f"Канал \"{bot.get_chat(channel_id).title}\" добавлен в список.")
+
 
 
 @bot.message_handler(commands=['getlist'])
@@ -113,14 +121,14 @@ def del_bot(message):
         return
     message_args = message.text.split()
     if len(message_args) != 2:
-        bot.send_message(message.from_user.id, "Некорректные входные данные!")
+        bot.send_message(message.from_user.id, "Некорректные входные данные! Формат: /del <id канала>.")
         return
     channel_id = message_args[1]
     if channel_id in channel_ids:
         channel_ids.remove(channel_id)
-        bot.send_message(message.from_user.id, f"Канал {channel_id} был удален из списка.")
+        bot.send_message(message.from_user.id, f"Канал \"{bot.get_chat(channel_id).title}\" был удален из списка.")
     else:
-        bot.send_message(message.from_user.id, f"Канала {channel_id} нет в списке!")
+        bot.send_message(message.from_user.id, f"Канала \"{bot.get_chat(channel_id).title}\" нет в списке!")
 
 
 @bot.message_handler(commands=['exit'])
