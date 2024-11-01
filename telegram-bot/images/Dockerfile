@@ -2,12 +2,12 @@ FROM python:3.13-slim
 
 WORKDIR /bot
 
-COPY dependencies/telegram-bot/requirements.txt .
+COPY telegram-bot/dependencies/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY code/telegram-bot/main.py .
-COPY assets/credentials.txt .
-COPY assets/token.txt .
+COPY telegram-bot/src/main.py .
+COPY telegram-bot/assets/credentials.txt .
+COPY telegram-bot/assets/token.txt .
 
 CMD ["python", "main.py"]

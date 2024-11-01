@@ -1,11 +1,13 @@
 FROM python:3.13-slim
 
-WORKDIR /recommendations
+WORKDIR /recommendation-system
 
-COPY dependencies/recommendation-system/requirements.txt .
+COPY recommendation-system/dependencies/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY code/recommendation-system/main.py .
+COPY recommendation-system/src/main.py .
+COPY recommendation-system/assets/credentials.txt .
+COPY recommendation-system/assets/token.txt .
 
 CMD ["python", "main.py"]
