@@ -2,7 +2,7 @@ FROM python:3.13-slim
 
 WORKDIR /recommendations
 
-COPY code/recommendation-system/requirements.txt .
+COPY dependencies/recommendation-system/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
