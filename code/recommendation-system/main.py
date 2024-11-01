@@ -11,30 +11,27 @@ loop = client.loop
 
 app = Flask(__name__)
 
+
 async def ranking_impl(request):
     limit = int(request.args.get("limit", 5))
     buffer = []
-    for entry in request.json:
-        channel = entry["channel"]
-        ids = entry["ids"]
-        size = (await client(functions.channels.GetFullChannelRequest(
-            channel=channel
-        ))).full_chat.participants_count
-        views = (await client(functions.messages.GetMessagesViewsRequest(
-        peer=channel,
-        id=ids,
-        increment=False
-        ))).views
-        for i in range(len(views)):
-            buffer.append((views[i].views / size, channel, ids[i]))
+    for channel in request.json:
+        size = (
+            await client(functions.channels.GetFullChannelRequest(channel=channel))
+        ).full_chat.participants_count
+
+        async for message in client.iter_messages(channel, limit):
+            buffer.append((message.views / size, channel, message.id))
     buffer.sort(reverse=True)
     return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
+
 
 @app.route("/ranking", methods=["GET"])
 def ranking():
     result = loop.run_until_complete(ranking_impl(request))
     return result
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     with client:
         app.run(port=3001)

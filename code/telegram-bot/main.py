@@ -1,5 +1,7 @@
 import telebot
 from telethon import TelegramClient
+import requests
+import json
 
 with open("token.txt", "r") as f:
     TOKEN = f.readline()
@@ -9,12 +11,8 @@ with open("credentials.txt", "r") as f:
     api_hash_bot = f.readline()
 
 bot = telebot.TeleBot(TOKEN)
-client_user = TelegramClient(
-    "system", api_id_bot, api_hash_bot, system_version="4.16.30-vxCUSTOM"
-).start()
-user_loop = client_user.loop
 client_bot = TelegramClient(
-    "system2", api_id_bot, api_hash_bot, system_version="4.16.30-vxCUSTOM"
+    "bot", api_id_bot, api_hash_bot, system_version="4.16.30-vxCUSTOM"
 ).start(bot_token=TOKEN)
 bot_loop = client_bot.loop
 
@@ -46,8 +44,6 @@ def start_actions():
 def exit_actions():
     global is_started
     is_started = False
-    client_user.log_out()
-    client_bot.log_out()
 
 
 @bot.message_handler(commands=["start"])
@@ -67,16 +63,9 @@ def help_bot(message):
     bot.send_message(message.from_user.id, "\n\n".join(command_list_help))
 
 
-async def get_message_ids(channel_id, cnt):
-    entity = await client_user.get_input_entity(channel_id)
-    message_ids = [
-        message.id async for message in client_user.iter_messages(entity, limit=cnt)
-    ]
-    return message_ids
-
-
-async def forward_messages(user_id, message_ids, channel_id):
-    await client_bot.forward_messages(user_id, message_ids, channel_id)
+async def forward_messages(user_id, messages):
+    for message in messages:
+        await client_bot.forward_messages(user_id, message["id"], message["channel"])
 
 
 @bot.message_handler(commands=["digest"])
@@ -91,10 +80,18 @@ def digest_bot(message):
             "Воспользуйтесь командой /add, чтобы добавить канал.",
         )
         return
-    bot.send_message(message.from_user.id, "Дайджест на сегодня:")
-    for channel_id in channel_ids:
-        message_ids = user_loop.run_until_complete(get_message_ids(channel_id, 3))
-        bot_loop.run_until_complete(forward_messages(user_id, message_ids, channel_id))
+    bot.send_message(user_id, "Дайджест на сегодня:")
+    headers = {"Content-type": "application/json"}
+    response = requests.get(
+        "http://127.0.0.1:3001/ranking?limit=5",
+        headers=headers,
+        data=json.dumps(list(channel_ids)),
+    )
+    if response.status_code != 200:
+        bot.send_message(user_id, "Не получилось получить дайджест")
+        return
+    messages = response.json()
+    bot_loop.run_until_complete(forward_messages(user_id, messages))
 
 
 @bot.message_handler(commands=["settings"])
