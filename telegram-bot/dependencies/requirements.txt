@@ -1,2 +1,4 @@
+Telethon
+Flask
 pytest
 pytest-cov
