@@ -6,7 +6,7 @@ COPY recommendation-system/dependencies/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY recommendation-system/src/main.py .
+COPY recommendation-system/source/main.py .
 COPY recommendation-system/assets/credentials.txt .
 COPY recommendation-system/assets/token.txt .
 

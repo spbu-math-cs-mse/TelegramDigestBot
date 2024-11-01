@@ -1,10 +1,10 @@
 services:
   telegram-bot:
     build:
-      dockerfile: images/telegram-bot/Dockerfile
+      dockerfile: telegram-bot/images/Dockerfile
     container_name: telegram-bot-container
 
   recommendation-system:
     build:
-      dockerfile: images/recommendation-system/Dockerfile
+      dockerfile: recommendation-system/images/Dockerfile
     container_name: recommendation-system-container
