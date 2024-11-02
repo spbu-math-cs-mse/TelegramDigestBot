@@ -8,3 +8,19 @@ services:
     build:
       dockerfile: recommendation-system/images/Dockerfile
     container_name: recommendation-system-container
+
+  data-storage:
+    build:
+      dockerfile: data-storage/images/Dockerfile
+    container_name: data-storage-container
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
