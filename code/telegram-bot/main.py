@@ -83,9 +83,9 @@ def digest_bot(message):
     bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
     response = requests.get(
-        "http://127.0.0.1:3001/ranking?limit=5",
+        "http://127.0.0.1:8000/ranking?limit=5",
         headers=headers,
-        data=json.dumps(list(channel_ids)),
+        data=json.dumps([{"id" : id} for id in channel_ids]),
     )
     if response.status_code != 200:
         bot.send_message(user_id, "Не получилось получить дайджест")

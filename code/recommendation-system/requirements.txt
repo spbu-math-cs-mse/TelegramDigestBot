@@ -1,2 +1,2 @@
 Telethon
-Flask
+fastapi[standard]
