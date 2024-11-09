@@ -2,6 +2,7 @@ import telebot
 from telethon import TelegramClient
 import requests
 import json
+from datetime import date, timedelta, datetime
 
 with open("token.txt", "r") as f:
     TOKEN = f.readline()
@@ -68,6 +69,17 @@ async def forward_messages(user_id, messages):
         await client_bot.forward_messages(user_id, message["id"], message["channel"])
 
 
+def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
+    return json.dumps(
+        {
+            "user_id": user_id,
+            "limit": limit,
+            "offset_date": str(offset_date),
+            "channels": [{"id": id} for id in channel_ids],
+        }
+    )
+
+
 @bot.message_handler(commands=["digest"])
 def digest_bot(message):
     if not is_started:
@@ -83,9 +95,9 @@ def digest_bot(message):
     bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
     response = requests.get(
-        "http://127.0.0.1:8000/ranking?limit=5",
+        "http://127.0.0.1:8000/digest",
         headers=headers,
-        data=json.dumps([{"id" : id} for id in channel_ids]),
+        data=make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids),
     )
     if response.status_code != 200:
         bot.send_message(user_id, "Не получилось получить дайджест")
