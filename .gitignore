@@ -163,13 +163,5 @@ cython_debug/
 
 
 # Telegram stuff
-assets/token.txt
-assets/credentials.txt
-*.session*
-
-# env
-telegram-digest-bot/*
-
-# secrets
-token.txt
-credentials.txt
+*/assets/token.txt
+*/assets/credentials.txt
