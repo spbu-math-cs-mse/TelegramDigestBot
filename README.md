@@ -17,6 +17,6 @@ Telegram bot that parses channels and sends a selection of the best posts (diges
 
 You can get them from the dev-team or use your own.
 
-### How can I get more information.
+### How can I get more information?
 
 [WIKI](WIKI.md)
