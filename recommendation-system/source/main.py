@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-with open("credentials.txt", "r") as f:
+with open("assets/credentials.txt", "r") as f:
     api_id = int(f.readline())
-    api_hash = f.readline()
+    api_hash = f.readline().strip()
 
 client = TelegramClient("system", api_id, api_hash)
 
@@ -29,12 +29,12 @@ class Channel(BaseModel):
 class Request(BaseModel):
     user_id: str
     limit: int
-    offset_date: datetime
+    offset_date: str
     channels: list[Channel]
 
 
 @app.get("/digest")
-async def digest(request: Request = Body()):
+async def digest(request: Request):
     limit = request.limit
     offset_date = request.offset_date
     channels = request.channels
@@ -49,6 +49,3 @@ async def digest(request: Request = Body()):
             buffer.append((message.views / size, channel.id, message.id))
     buffer.sort(reverse=True)
     return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
-
-if __name__ == "__main__":
-    uvicorn.run(app)

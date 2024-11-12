@@ -1,14 +1,17 @@
 import aiohttp
 
 class UserService:
-    def __init__(self, host, port):
+    async def init(self, host, port):
         self.session = aiohttp.ClientSession()
-        self.url = f'{host}:{port}'
+        self.url = f'http://{host}:{port}'
+        return self
 
     async def _ok(self, method, request, data):
-        request = await self.session.request(method, self.url + "/" + request, data=data)
+        request = await self.session.request(method, self.url + "/" + request, json=data, headers={
+            'Content-Type': 'application/json'
+        })
         response = dict(await request.json())
-        return response.get('ok', default=None)
+        return response.get('ok', None)
 
     async def register_user(self, login, name) -> bool:
         return await self._ok("POST", "register", data={

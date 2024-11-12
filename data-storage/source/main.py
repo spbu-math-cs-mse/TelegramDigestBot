@@ -5,7 +5,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-client = MongoClient("mongodb://mongo:27017/")
+client = MongoClient("mongodb://localhost:27017/")
 db = client["db"]
 users = db["users"]
 
@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 def register_user():
     login = request.get_json()['login']
     name = request.get_json()['name']
+
+    logger.warn("Register user " + str(login))
 
     user = users.find_one({"login": login}, {'_id': 0})
     if user is None:
@@ -45,8 +47,8 @@ def get_channels():
 def subscribe():
     data = request.get_json()
 
-    user_login = data['user_login']
-    channel_login = data['channel_login']
+    user_login = data['user']
+    channel_login = data['channel']
 
     user = users.find_one({"login": user_login})
     if user is None:
