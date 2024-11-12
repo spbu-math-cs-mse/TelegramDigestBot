@@ -3,6 +3,7 @@ from telethon import TelegramClient
 import requests
 import json
 from datetime import date, timedelta, datetime
+from users import UserService
 
 with open("token.txt", "r") as f:
     TOKEN = f.readline()
@@ -36,6 +37,7 @@ is_started = False
 
 channel_ids = set()
 
+users = UserService("127.0.0.1", 5000)
 
 def start_actions():
     global is_started
@@ -52,6 +54,12 @@ def start_bot(message):
     if is_started:  # на следующем спринте уберу эти проверки
         return
     start_actions()
+
+    bot_loop.run_until_complete(users.register_user(
+        login=message.from_user.id, 
+        name=message.from_user.id
+    ))
+
     bot.send_message(
         message.from_user.id, "Привет! Напиши /help для вывода списка команд."
     )
@@ -85,6 +93,9 @@ def digest_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
+
+    channel_ids = bot_loop.run_until_complete(users.channels(user_id))
+
     if len(channel_ids) == 0:
         bot.send_message(
             user_id,
@@ -129,7 +140,7 @@ def add_bot(message):
         )
         return
     channel_id = message_args[1]
-    channel_ids.add(channel_id)
+    bot_loop.run_until_complete(users.subscribe(user=user_id, channel=channel_id))
     bot.send_message(user_id, f'Канал "{get_title(channel_id)}" добавлен в список.')
 
 
@@ -145,10 +156,10 @@ def del_bot(message):
         )
         return
     channel_id = message_args[1]
-    if channel_id not in channel_ids:
+    deleted = bot_loop.run_until_complete(users.unsubscribe(user=user_id, channel=channel_id))
+    if not deleted:
         bot.send_message(user_id, f'Канала "{get_title(channel_id)}" нет в списке!')
         return
-    channel_ids.remove(channel_id)
     bot.send_message(user_id, f'Канал "{get_title(channel_id)}" был удален из списка.')
 
 
@@ -157,7 +168,10 @@ def get_list_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
-    if len(channel_ids) == 0:
+
+    channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
+
+    if channel_ids is None or len(channel_ids) == 0:
         bot.send_message(
             user_id,
             "На данный момент ни одного канала не подключено! "

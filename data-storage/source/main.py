@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from pymongo import MongoClient
 import logging
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -13,22 +14,29 @@ logger = logging.getLogger(__name__)
 
 @app.route('/register', methods=['POST'])
 def register_user():
-    user_id = request.get_json()['user_id']
-    user = users.find_one({"user_id": user_id}, {'_id': 0})
+    login = request.get_json()['login']
+    name = request.get_json()['name']
+
+    user = users.find_one({"login": login}, {'_id': 0})
     if user is None:
-        user = {"user_id": user_id, "channels": []}
+        user = {
+            "login": login, 
+            "name": name, 
+            "last_timestamp": 0,
+            "channels": []
+        }
         users.insert_one(user)
-        user = users.find_one({"user_id": user_id}, {'_id': 0})
+        user = users.find_one({"login": login}, {'_id': 0})
         return jsonify({"ok": user}), 201
     return jsonify({"error": user}), 400
 
 
 @app.route('/channels', methods=['GET'])
 def get_channels():
-    user_id = request.get_json()['user_id']
-    user = users.find_one({"user_id": user_id})
+    login = request.get_json()['login']
+    user = users.find_one({"login": login})
     if user is None:
-        return {"error": f"User {user_id} not found"}, 404
+        return {"error": f"User {login} not found"}, 404
     channels = user['channels']
     return {"ok": channels}, 200
 
@@ -37,48 +45,50 @@ def get_channels():
 def subscribe():
     data = request.get_json()
 
-    user_id = data['user_id']
-    channel_id = data['channel_id']
+    user_login = data['user_login']
+    channel_login = data['channel_login']
 
-    user = users.find_one({"user_id": user_id})
+    user = users.find_one({"login": user_login})
     if user is None:
-        return {'error': f'User {user_id} not found'}, 404
-    if channel_id in user['channels']:
-        return {'error': f'User {user_id} has already subscribed to channel {channel_id}'}
+        return {'error': f'User {user_login} not found'}, 404
+    if channel_login in user['channels']:
+        return {'error': f'User {user_login} has already subscribed to channel {channel_login}'}
     
     users.update_one(
-        {'user_id': user_id},
-        {'$push': {'channels': channel_id}}
+        {'login': user_login},
+        {'$push': {'channels': channel_login}}
     )
-    return {"ok": channel_id}, 200
+
+    return {"ok": channel_login}, 200
 
 
 @app.route('/unsubscribe', methods=['PUT'])
 def unsubscribe():
     data = request.get_json()
 
-    user_id = data['user_id']
-    channel_id = data['channel_id']
+    user_login = data['user']
+    channel_login = data['channel']
 
-    user = users.find_one({"user_id": user_id})
+    user = users.find_one({"login": user_login})
     if user is None:
-        return {'error': f'User {user_id} not found'}, 404
-    if channel_id not in user['channels']:
-        return {'error': f'User {user_id} not subscribed to channel {channel_id}'}
+        return {'error': f'User {user_login} not found'}, 404
+    if channel_login not in user['channels']:
+        return {'error': f'User {user_login} not subscribed to channel {channel_login}'}
     
     users.update_one(
-        {'user_id': user_id},
-        {'$pull': {'channels': channel_id}}
+        {'user_id': user_login},
+        {'$pull': {'channels': channel_login}}
     )
-    return {"ok": channel_id}, 200
+
+    return {"ok": channel_login}, 200
 
 
 @app.route('/drop', methods=['DELETE'])
 def drop_user():
-    user_id = request.get_json()['user_id']
-    if users.delete_one({'user_id': user_id}).deleted_count:
-        return {'ok': user_id}, 201
-    return {'error': f'User {user_id} not found'}, 404
+    login = request.get_json()['login']
+    if users.delete_one({'login': login}).deleted_count:
+        return {'ok': login}, 201
+    return {'error': f'User {login} not found'}, 404
 
 
 if __name__ == '__main__':
