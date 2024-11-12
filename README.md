@@ -7,7 +7,7 @@ Telegram bot that parses channels and sends a selection of the best posts (diges
 
 ### How to run
 
-`docker compose up`
+`./install.sh && docker compose up`
 
 ### How to stop
 
