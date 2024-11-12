@@ -165,3 +165,4 @@ cython_debug/
 # Telegram stuff
 */assets/token.txt
 */assets/credentials.txt
+*.session
