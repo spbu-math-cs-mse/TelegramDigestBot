@@ -4,6 +4,7 @@ import requests
 import json
 from datetime import date, timedelta, datetime
 from users import UserService
+from threading import *
 
 with open("token.txt", "r") as f:
     TOKEN = f.readline()
@@ -88,12 +89,7 @@ def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
     )
 
 
-@bot.message_handler(commands=["digest"])
-def digest_bot(message):
-    if not is_started:
-        return
-    user_id = message.from_user.id
-
+def send_digest(user_id):
     channel_ids = bot_loop.run_until_complete(users.channels(user_id))
 
     if len(channel_ids) == 0:
@@ -115,6 +111,15 @@ def digest_bot(message):
         return
     messages = response.json()
     bot_loop.run_until_complete(forward_messages(user_id, messages))
+
+
+@bot.message_handler(commands=["digest"])
+def digest_bot(message):
+    if not is_started:
+        return
+    user_id = message.from_user.id
+
+    send_digest(user_id)
 
 
 @bot.message_handler(commands=["settings"])
@@ -192,5 +197,31 @@ def exit_bot(message):
         return
     exit_actions()
 
+timesToSend = []
+periodsToSend = []
+
+def clockWatcherRoutine():
+    while True:
+        sleep(1)
+        # for hour, minute, user_id in timesToSend:
+        #    if hour == datetime.datetime.now().hour and minute == datetime.datetime.now().minute:
+        #        send_digest(user_id)
+
+
+clockWatcher = Thread(target = clockWatcherRoutine)
+clockWatcher.setDaemon(True)
+clockWatcher.start()
+
+@bot.message_handler(commands=["setTime"])
+def setTime_bot(message):
+    user_id = message.from_user.id
+    date = message.text.split()
+    timesToSend.append((user_id, int(date[0]), int(date[1])))
+
+@bot.message_handler(commands=["setPeriod"])
+def setPeriod_bot(message):
+    user_id = message.from_user.id
+    period = message.text
+    periodsToSend.append(period)
 
 bot.infinity_polling()
