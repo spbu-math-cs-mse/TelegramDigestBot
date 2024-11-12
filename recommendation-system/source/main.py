@@ -1,3 +1,5 @@
+import uvicorn
+
 from telethon import TelegramClient, functions
 from fastapi import Query, Body, FastAPI
 from pydantic import BaseModel
@@ -47,3 +49,6 @@ async def digest(request: Request = Body()):
             buffer.append((message.views / size, channel.id, message.id))
     buffer.sort(reverse=True)
     return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
+
+if __name__ == "__main__":
+    uvicorn.run(app)
