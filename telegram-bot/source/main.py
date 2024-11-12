@@ -6,12 +6,16 @@ from datetime import date, timedelta, datetime
 from users import UserService
 from threading import *
 
-with open("token.txt", "r") as f:
-    TOKEN = f.readline()
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-with open("credentials.txt", "r") as f:
+with open("assets/token.txt", "r") as f:
+    TOKEN = f.readline().strip()
+
+with open("assets/credentials.txt", "r") as f:
     api_id_bot = int(f.readline())
-    api_hash_bot = f.readline()
+    api_hash_bot = f.readline().strip()
 
 bot = telebot.TeleBot(TOKEN)
 client_bot = TelegramClient(
@@ -36,9 +40,7 @@ command_list_settings = [
 
 is_started = False
 
-channel_ids = set()
-
-users = UserService("127.0.0.1", 5000)
+users = bot_loop.run_until_complete(UserService().init("127.0.0.1", 5000))
 
 def start_actions():
     global is_started
@@ -79,18 +81,21 @@ async def forward_messages(user_id, messages):
 
 
 def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
-    return json.dumps(
-        {
-            "user_id": user_id,
-            "limit": limit,
-            "offset_date": str(offset_date),
-            "channels": [{"id": id} for id in channel_ids],
-        }
-    )
+    return {
+        "user_id": user_id,
+        "limit": limit,
+        "offset_date": str(offset_date),
+        "channels": [{"id": id} for id in channel_ids],
+    }
 
 
-def send_digest(user_id):
-    channel_ids = bot_loop.run_until_complete(users.channels(user_id))
+@bot.message_handler(commands=["digest"])
+def digest_bot(message):
+    if not is_started:
+        return
+    user_id = message.from_user.id
+
+    channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
 
     if len(channel_ids) == 0:
         bot.send_message(
@@ -101,10 +106,14 @@ def send_digest(user_id):
         return
     bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
+
+    data = make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids)
+    logger.warning(data)
+
     response = requests.get(
         "http://127.0.0.1:8000/digest",
         headers=headers,
-        data=make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids),
+        json=data,
     )
     if response.status_code != 200:
         bot.send_message(user_id, "Не получилось получить дайджест")
