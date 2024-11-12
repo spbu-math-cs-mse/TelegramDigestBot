@@ -23,6 +23,8 @@ bot_loop = client_bot.loop
 command_list_help = [
     "/start - начать работу",
     "/help - вывести список команд",
+    "/setTime - установить время отправки дайджеста (в формате час:минута)",
+    "/setPeriod - установить частоту отправки дайджеста (в днях)",
     "/digest - получить дайджест",
     "/settings - вывести команды для пользовательских настроек",
     "/exit - завершить работу",
@@ -203,9 +205,9 @@ periodsToSend = []
 def clockWatcherRoutine():
     while True:
         sleep(1)
-        # for hour, minute, user_id in timesToSend:
-        #    if hour == datetime.datetime.now().hour and minute == datetime.datetime.now().minute:
-        #        send_digest(user_id)
+        for user_id, hour, minute in timesToSend:
+           if hour == datetime.datetime.now().hour and minute == datetime.datetime.now().minute:
+               send_digest(user_id)
 
 
 clockWatcher = Thread(target = clockWatcherRoutine)
@@ -215,7 +217,7 @@ clockWatcher.start()
 @bot.message_handler(commands=["setTime"])
 def setTime_bot(message):
     user_id = message.from_user.id
-    date = message.text.split()
+    date = message.text.split(":")
     timesToSend.append((user_id, int(date[0]), int(date[1])))
 
 @bot.message_handler(commands=["setPeriod"])
