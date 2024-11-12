@@ -10,4 +10,4 @@ COPY recommendation-system/source/main.py .
 COPY recommendation-system/assets/credentials.txt .
 COPY recommendation-system/assets/token.txt .
 
-CMD ["python", "main.py"]
+CMD ["fastapi", "dev", "main.py"]
