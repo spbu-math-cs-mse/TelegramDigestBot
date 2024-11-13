@@ -2,3 +2,4 @@ Flask
 pymongo
 pytest
 pytest-cov
+fastapi

@@ -1,3 +1,6 @@
 pyTelegramBotAPI
 pytest
 pytest-cov
+fastapi
+uvicorn 
+Telethon

@@ -1,40 +1,54 @@
-from telethon.sync import TelegramClient
-from telethon import functions, types
-from flask import Flask, request
+import uvicorn
+
+from telethon import TelegramClient, functions
+from fastapi import Query, Body, FastAPI
+from pydantic import BaseModel
+from contextlib import asynccontextmanager
+from datetime import datetime
 
 with open("credentials.txt", "r") as f:
     api_id = int(f.readline())
     api_hash = f.readline()
 
 client = TelegramClient("system", api_id, api_hash)
-loop = client.loop
 
-app = Flask(__name__)
 
-async def ranking_impl(request):
-    limit = int(request.args.get("limit", 5))
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await client.connect()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+class Channel(BaseModel):
+    id: str
+
+
+class Request(BaseModel):
+    user_id: str
+    limit: int
+    offset_date: datetime
+    channels: list[Channel]
+
+
+@app.get("/digest")
+async def digest(request: Request = Body()):
+    limit = request.limit
+    offset_date = request.offset_date
+    channels = request.channels
     buffer = []
-    for entry in request.json:
-        channel = entry["channel"]
-        ids = entry["ids"]
-        size = (await client(functions.channels.GetFullChannelRequest(
-            channel=channel
-        ))).full_chat.participants_count
-        views = (await client(functions.messages.GetMessagesViewsRequest(
-        peer=channel,
-        id=ids,
-        increment=False
-        ))).views
-        for i in range(len(views)):
-            buffer.append((views[i].views / size, channel, ids[i]))
+    for channel in channels:
+        size = (
+            await client(functions.channels.GetFullChannelRequest(channel=channel.id))
+        ).full_chat.participants_count
+        async for message in client.iter_messages(
+            channel.id, limit, offset_date=offset_date, reverse=True
+        ):
+            buffer.append((message.views / size, channel.id, message.id))
     buffer.sort(reverse=True)
     return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
 
-@app.route("/ranking", methods=["GET"])
-def ranking():
-    result = loop.run_until_complete(ranking_impl(request))
-    return result
-
-if __name__ == '__main__':
-    with client:
-        app.run(port=3001)
+if __name__ == "__main__":
+    uvicorn.run(app)
