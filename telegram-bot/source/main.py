@@ -3,13 +3,19 @@ from telethon import TelegramClient
 import requests
 import json
 from datetime import date, timedelta, datetime
+from users import UserService
+from threading import *
 
-with open("token.txt", "r") as f:
-    TOKEN = f.readline()
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-with open("credentials.txt", "r") as f:
+with open("assets/token.txt", "r") as f:
+    TOKEN = f.readline().strip()
+
+with open("assets/credentials.txt", "r") as f:
     api_id_bot = int(f.readline())
-    api_hash_bot = f.readline()
+    api_hash_bot = f.readline().strip()
 
 bot = telebot.TeleBot(TOKEN)
 client_bot = TelegramClient(
@@ -21,6 +27,8 @@ bot_loop = client_bot.loop
 command_list_help = [
     "/start - начать работу",
     "/help - вывести список команд",
+    "/setTime - установить время отправки дайджеста (в формате час:минута)",
+    "/setPeriod - установить частоту отправки дайджеста (в днях)",
     "/digest - получить дайджест",
     "/settings - вывести команды для пользовательских настроек",
     "/exit - завершить работу",
@@ -42,8 +50,7 @@ command_list_help = ["/start - начать работу",
 
 is_started = False
 
-channel_ids = set()
-
+users = bot_loop.run_until_complete(UserService().init("127.0.0.1", 5000))
 
 def start_actions():
     global is_started
@@ -60,6 +67,12 @@ def start_bot(message):
     if is_started:  # на следующем спринте уберу эти проверки
         return
     start_actions()
+
+    bot_loop.run_until_complete(users.register_user(
+        login=message.from_user.id, 
+        name=message.from_user.id
+    ))
+
     bot.send_message(
         message.from_user.id, "Привет! Напиши /help для вывода списка команд."
     )
@@ -78,14 +91,12 @@ async def forward_messages(user_id, messages):
 
 
 def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
-    return json.dumps(
-        {
-            "user_id": user_id,
-            "limit": limit,
-            "offset_date": str(offset_date),
-            "channels": [{"id": id} for id in channel_ids],
-        }
-    )
+    return {
+        "user_id": user_id,
+        "limit": limit,
+        "offset_date": str(offset_date),
+        "channels": [{"id": id} for id in channel_ids],
+    }
 
 
 @bot.message_handler(commands=["digest"])
@@ -93,6 +104,9 @@ def digest_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
+
+    channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
+
     if len(channel_ids) == 0:
         bot.send_message(
             user_id,
@@ -102,16 +116,29 @@ def digest_bot(message):
         return
     bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
+
+    data = make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids)
+    logger.warning(data)
+
     response = requests.get(
         "http://127.0.0.1:8000/digest",
         headers=headers,
-        data=make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids),
+        json=data,
     )
     if response.status_code != 200:
         bot.send_message(user_id, "Не получилось получить дайджест")
         return
     messages = response.json()
     bot_loop.run_until_complete(forward_messages(user_id, messages))
+
+
+@bot.message_handler(commands=["digest"])
+def digest_bot(message):
+    if not is_started:
+        return
+    user_id = message.from_user.id
+
+    send_digest(user_id)
 
 
 @bot.message_handler(commands=["settings"])
@@ -137,7 +164,7 @@ def add_bot(message):
         )
         return
     channel_id = message_args[1]
-    channel_ids.add(channel_id)
+    bot_loop.run_until_complete(users.subscribe(user=user_id, channel=channel_id))
     bot.send_message(user_id, f'Канал "{get_title(channel_id)}" добавлен в список.')
 
 
@@ -153,10 +180,10 @@ def del_bot(message):
         )
         return
     channel_id = message_args[1]
-    if channel_id not in channel_ids:
+    deleted = bot_loop.run_until_complete(users.unsubscribe(user=user_id, channel=channel_id))
+    if not deleted:
         bot.send_message(user_id, f'Канала "{get_title(channel_id)}" нет в списке!')
         return
-    channel_ids.remove(channel_id)
     bot.send_message(user_id, f'Канал "{get_title(channel_id)}" был удален из списка.')
 
 
@@ -165,7 +192,10 @@ def get_list_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
-    if len(channel_ids) == 0:
+
+    channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
+
+    if channel_ids is None or len(channel_ids) == 0:
         bot.send_message(
             user_id,
             "На данный момент ни одного канала не подключено! "

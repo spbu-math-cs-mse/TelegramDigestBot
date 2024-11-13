@@ -3,3 +3,4 @@ Telethon
 Flask
 pytest
 pytest-cov
+aiohttp
