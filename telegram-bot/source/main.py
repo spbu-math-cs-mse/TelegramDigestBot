@@ -1,12 +1,13 @@
 import telebot
 from telethon import TelegramClient
 import requests
-import json
+from time import sleep
 from datetime import date, timedelta, datetime
 from users import UserService
 from threading import *
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,17 +41,20 @@ command_list_settings = [
     "/del <id канала> - отключить канал от дайджеста",
 ]
 
-command_list_help = ["/start - начать работу",
+command_list_help = [
+    "/start - начать работу",
     "/help - вывести список команд",
     "/setTime hh:mm - установить время отправки дайджеста (в формате час:минута)",
     "/setPeriod n - установить частоту отправки дайджеста (n в днях)",
     "/digest - получить дайджест",
     "/settings - вывести команды для пользовательских настроек",
-    "/exit - завершить работу",]
+    "/exit - завершить работу",
+]
 
 is_started = False
 
 users = bot_loop.run_until_complete(UserService().init("127.0.0.1", 5000))
+
 
 def start_actions():
     global is_started
@@ -68,10 +72,9 @@ def start_bot(message):
         return
     start_actions()
 
-    bot_loop.run_until_complete(users.register_user(
-        login=message.from_user.id, 
-        name=message.from_user.id
-    ))
+    bot_loop.run_until_complete(
+        users.register_user(login=message.from_user.id, name=message.from_user.id)
+    )
 
     bot.send_message(
         message.from_user.id, "Привет! Напиши /help для вывода списка команд."
@@ -99,12 +102,7 @@ def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
     }
 
 
-@bot.message_handler(commands=["digest"])
-def digest_bot(message):
-    if not is_started:
-        return
-    user_id = message.from_user.id
-
+def send_digest(user_id):
     channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
 
     if len(channel_ids) == 0:
@@ -137,7 +135,6 @@ def digest_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
-
     send_digest(user_id)
 
 
@@ -180,7 +177,9 @@ def del_bot(message):
         )
         return
     channel_id = message_args[1]
-    deleted = bot_loop.run_until_complete(users.unsubscribe(user=user_id, channel=channel_id))
+    deleted = bot_loop.run_until_complete(
+        users.unsubscribe(user=user_id, channel=channel_id)
+    )
     if not deleted:
         bot.send_message(user_id, f'Канала "{get_title(channel_id)}" нет в списке!')
         return
@@ -216,31 +215,41 @@ def exit_bot(message):
         return
     exit_actions()
 
+
 timesToSend = []
 periodsToSend = []
+sended = {}
+
 
 def clockWatcherRoutine():
     while True:
         sleep(1)
         for user_id, hour, minute in timesToSend:
-           if hour == datetime.datetime.now().hour and minute == datetime.datetime.now().minute:
-               send_digest(user_id)
+            curr = datetime.now().date()
+            if sended.get(user_id) == curr:  # already sent today
+                continue
+            if hour == datetime.now().hour and minute == datetime.now().minute:
+                sended[user_id] = curr
+                send_digest(user_id)
 
 
-clockWatcher = Thread(target = clockWatcherRoutine)
+clockWatcher = Thread(target=clockWatcherRoutine)
 clockWatcher.setDaemon(True)
 clockWatcher.start()
+
 
 @bot.message_handler(commands=["setTime"])
 def setTime_bot(message):
     user_id = message.from_user.id
-    date = message.text.split(":")
+    date = message.text[9:].split(":")
     timesToSend.append((user_id, int(date[0]), int(date[1])))
+
 
 @bot.message_handler(commands=["setPeriod"])
 def setPeriod_bot(message):
     user_id = message.from_user.id
-    period = message.text
+    period = message.text[10:]
     periodsToSend.append(period)
+
 
 bot.infinity_polling()
