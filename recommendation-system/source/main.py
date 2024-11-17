@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from datetime import datetime
 from contextlib import asynccontextmanager
+from math import sqrt
 
 DB_PATH = "recommendation-system.db"
 
@@ -60,6 +61,12 @@ async def lifespan(app: FastAPI):
         )
         await db.execute(
             """
+        CREATE INDEX IF NOT EXISTS likes_index
+        ON likes(channel_id, message_id)
+        """
+        )
+        await db.execute(
+            """
         CREATE TABLE IF NOT EXISTS dislikes(
             channel_id INTEGER,
             message_id INTEGER,
@@ -68,54 +75,14 @@ async def lifespan(app: FastAPI):
         )
         """
         )
+        await db.execute(
+            """
+        CREATE INDEX IF NOT EXISTS dislikes_index
+        ON dislikes(channel_id, message_id)
+        """
+        )
         await db.commit()
     yield
-
-
-app = FastAPI(lifespan=lifespan)
-
-
-class Channel(BaseModel):
-    id: str
-
-
-class DigestRequest(BaseModel):
-    user_id: str
-    limit: int
-    offset_date: datetime
-    channels: list[Channel]
-
-
-def get_score(message):
-    return (
-        message.views
-        + len(message.reactions.results) * 5
-        + message.replies.replies * 10
-    )
-
-
-@app.get("/digest")
-async def digest(request: DigestRequest):
-    limit = request.limit
-    offset_date = request.offset_date
-    channels = request.channels
-    buffer = []
-    for channel in channels:
-        size = (
-            await client(functions.channels.GetFullChannelRequest(channel=channel.id))
-        ).full_chat.participants_count
-        async for message in client.iter_messages(
-            channel.id, limit, offset_date=offset_date, reverse=True
-        ):
-            buffer.append((get_score(message) / size, channel.id, message.id))
-    buffer.sort(reverse=True)
-    return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
-
-
-class LikeRequest(BaseModel):
-    user_id: str
-    channel: Channel
-    id: int
 
 
 async def get_user(db: aiosqlite.Connection, user_id: str) -> int:
@@ -142,12 +109,94 @@ async def get_channel(db: aiosqlite.Connection, channel_id: str) -> int:
     return row[0]
 
 
+async def get_likes(db: aiosqlite.Connection, channel_id: str, message_id: int) -> int:
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM likes WHERE channel_id={await get_channel(db, channel_id)} AND message_id={message_id}"
+    )
+    row = await cursor.fetchone()
+    return row[0]
+
+
+async def get_dislikes(
+    db: aiosqlite.Connection, channel_id: str, message_id: int
+) -> int:
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM dislikes WHERE channel_id={await get_channel(db, channel_id)} AND message_id={message_id}"
+    )
+    row = await cursor.fetchone()
+    return row[0]
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+class Channel(BaseModel):
+    id: str
+
+
+class DigestRequest(BaseModel):
+    user_id: str
+    limit: int
+    offset_date: datetime
+    channels: list[Channel]
+
+
+def get_popularity_score(message) -> int:
+    return (
+        message.views
+        + len(message.reactions.results) * 5
+        + message.replies.replies * 10
+    )
+
+
+def get_wilson_score(likes, dislikes) -> float:
+    if likes == 0:
+        return -dislikes
+    z = 1.64485
+    n = likes + dislikes
+    phat = likes / n
+    return (
+        phat + z * z / (2 * n) - z * sqrt((phat * (1 - phat) + z * z / (4 * n)) / n)
+    ) / (1 + z * z / n)
+
+
+@app.get("/digest")
+async def digest(request: DigestRequest):
+    limit = request.limit
+    offset_date = request.offset_date
+    channels = request.channels
+    buffer = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        for channel in channels:
+            size = (
+                await client(
+                    functions.channels.GetFullChannelRequest(channel=channel.id)
+                )
+            ).full_chat.participants_count
+            async for message in client.iter_messages(
+                channel.id, limit, offset_date=offset_date, reverse=True
+            ):
+                score = get_popularity_score(message) / size + get_wilson_score(
+                    await get_likes(db, channel.id, message.id),
+                    await get_dislikes(db, channel.id, message.id),
+                )
+                buffer.append((score, channel.id, message.id))
+    buffer.sort(reverse=True)
+    return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
+
+
+class LikeRequest(BaseModel):
+    user_id: str
+    channel: Channel
+    id: int
+
+
 @app.post("/like")
 async def like(request: LikeRequest):
     async with aiosqlite.connect(DB_PATH) as db:
-        ss = f"INSERT OR IGNORE INTO likes VALUES({await get_channel(db, request.channel.id)}, {request.id}, {await get_user(db, request.user_id)})"
-        print(ss)
-        await db.execute(ss)
+        await db.execute(
+            f"INSERT OR IGNORE INTO likes VALUES({await get_channel(db, request.channel.id)}, {request.id}, {await get_user(db, request.user_id)})"
+        )
         await db.commit()
     return {}
 
