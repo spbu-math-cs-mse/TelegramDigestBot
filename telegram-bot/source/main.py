@@ -88,9 +88,19 @@ def help_bot(message):
     bot.send_message(message.from_user.id, "\n\n".join(command_list_help))
 
 
+def send_reaction_buttons(user_id, message_id, channel_id):
+    metadata = f"{user_id},{message_id},{channel_id}"
+    markup = telebot.types.InlineKeyboardMarkup()
+    btn_yes = telebot.types.InlineKeyboardButton("👍", callback_data=f'like_{metadata}')
+    btn_no = telebot.types.InlineKeyboardButton("👎", callback_data=f'dislike_{metadata}')
+    markup.add(btn_yes, btn_no)
+    
+    bot.send_message(user_id, "Понравилось?", reply_markup=markup)
+
 async def forward_messages(user_id, messages):
     for message in messages:
         await client_bot.forward_messages(user_id, message["id"], message["channel"])
+        send_reaction_buttons(user_id, message["id"], message["channel"])
 
 
 def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
@@ -100,6 +110,13 @@ def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
         "offset_date": str(offset_date),
         "channels": [{"id": id} for id in channel_ids],
     }
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_query(call):
+    if call.data.startswith('like'):
+        bot.answer_callback_query(call.id, "Вам понравилось, мы рады!")
+    elif call.data.startswith('dislike'):
+        bot.answer_callback_query(call.id, "Учтем ваши замечания!")
 
 
 def send_digest(user_id):
@@ -250,6 +267,5 @@ def setPeriod_bot(message):
     user_id = message.from_user.id
     period = message.text[10:]
     periodsToSend.append(period)
-
 
 bot.infinity_polling()
