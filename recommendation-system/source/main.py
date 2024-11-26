@@ -1,22 +1,130 @@
 import uvicorn
-
+import asyncio
+import aiosqlite
 from telethon import TelegramClient, functions
-from fastapi import Query, Body, FastAPI
+from fastapi import FastAPI
 from pydantic import BaseModel
-from contextlib import asynccontextmanager
 from datetime import datetime
+from contextlib import asynccontextmanager
+from math import sqrt
+
+DB_PATH = "recommendation-system.db"
 
 with open("assets/credentials.txt", "r") as f:
     api_id = int(f.readline())
     api_hash = f.readline().strip()
 
-client = TelegramClient("system", api_id, api_hash)
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+client = TelegramClient("recommendation-system", api_id, api_hash, loop=loop)
+client.start()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await client.connect()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+        CREATE TABLE IF NOT EXISTS channels(
+        name TEXT                 
+        )
+        """
+        )
+        await db.execute(
+            """
+        CREATE INDEX IF NOT EXISTS channels_index
+        ON channels(name)
+        """
+        )
+        await db.execute(
+            """
+        CREATE TABLE IF NOT EXISTS users(
+        name TEXT                 
+        )
+        """
+        )
+        await db.execute(
+            """
+        CREATE INDEX IF NOT EXISTS users_index
+        ON users(name)
+        """
+        )
+        await db.execute(
+            """
+        CREATE TABLE IF NOT EXISTS likes(
+            channel_id INTEGER,
+            message_id INTEGER,
+            user_id INTEGER,
+            PRIMARY KEY(channel_id, message_id, user_id)
+        )
+        """
+        )
+        await db.execute(
+            """
+        CREATE INDEX IF NOT EXISTS likes_index
+        ON likes(channel_id, message_id)
+        """
+        )
+        await db.execute(
+            """
+        CREATE TABLE IF NOT EXISTS dislikes(
+            channel_id INTEGER,
+            message_id INTEGER,
+            user_id INTEGER,
+            PRIMARY KEY(channel_id, message_id, user_id)
+        )
+        """
+        )
+        await db.execute(
+            """
+        CREATE INDEX IF NOT EXISTS dislikes_index
+        ON dislikes(channel_id, message_id)
+        """
+        )
+        await db.commit()
     yield
+
+
+async def get_user(db: aiosqlite.Connection, user_id: str) -> int:
+    cursor = await db.execute(f"SELECT rowid FROM users WHERE name = '{user_id}'")
+    row = await cursor.fetchone()
+    if row is not None:
+        return row[0]
+    cursor = await db.execute(f"INSERT INTO users VALUES('{user_id}') RETURNING rowid")
+    row = await cursor.fetchone()
+    await db.commit()
+    return row[0]
+
+
+async def get_channel(db: aiosqlite.Connection, channel_id: str) -> int:
+    cursor = await db.execute(f"SELECT rowid FROM channels WHERE name = '{channel_id}'")
+    row = await cursor.fetchone()
+    if row is not None:
+        return row[0]
+    cursor = await db.execute(
+        f"INSERT INTO channels VALUES('{channel_id}') RETURNING rowid"
+    )
+    row = await cursor.fetchone()
+    await db.commit()
+    return row[0]
+
+
+async def get_likes(db: aiosqlite.Connection, channel_id: str, message_id: int) -> int:
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM likes WHERE channel_id={await get_channel(db, channel_id)} AND message_id={message_id}"
+    )
+    row = await cursor.fetchone()
+    return row[0]
+
+
+async def get_dislikes(
+    db: aiosqlite.Connection, channel_id: str, message_id: int
+) -> int:
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM dislikes WHERE channel_id={await get_channel(db, channel_id)} AND message_id={message_id}"
+    )
+    row = await cursor.fetchone()
+    return row[0]
 
 
 app = FastAPI(lifespan=lifespan)
@@ -26,26 +134,91 @@ class Channel(BaseModel):
     id: str
 
 
-class Request(BaseModel):
+class DigestRequest(BaseModel):
     user_id: str
     limit: int
-    offset_date: str
+    offset_date: datetime
     channels: list[Channel]
 
 
+def get_popularity_score(message) -> int:
+    return (
+        message.views
+        + len(message.reactions.results) * 5
+        + message.replies.replies * 10
+    )
+
+
+def get_wilson_score(likes, dislikes) -> float:
+    if likes == 0:
+        return -dislikes
+    z = 1.64485
+    n = likes + dislikes
+    phat = likes / n
+    return (
+        phat + z * z / (2 * n) - z * sqrt((phat * (1 - phat) + z * z / (4 * n)) / n)
+    ) / (1 + z * z / n)
+
+
 @app.get("/digest")
-async def digest(request: Request):
+async def digest(request: DigestRequest):
     limit = request.limit
     offset_date = request.offset_date
     channels = request.channels
     buffer = []
-    for channel in channels:
-        size = (
-            await client(functions.channels.GetFullChannelRequest(channel=channel.id))
-        ).full_chat.participants_count
-        async for message in client.iter_messages(
-            channel.id, limit, offset_date=offset_date, reverse=True
-        ):
-            buffer.append((message.views / size, channel.id, message.id))
+    async with aiosqlite.connect(DB_PATH) as db:
+        for channel in channels:
+            size = (
+                await client(
+                    functions.channels.GetFullChannelRequest(channel=channel.id)
+                )
+            ).full_chat.participants_count
+            async for message in client.iter_messages(
+                channel.id, limit, offset_date=offset_date, reverse=True
+            ):
+                score = get_popularity_score(message) / size + get_wilson_score(
+                    await get_likes(db, channel.id, message.id),
+                    await get_dislikes(db, channel.id, message.id),
+                )
+                buffer.append((score, channel.id, message.id))
     buffer.sort(reverse=True)
     return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
+
+
+class LikeRequest(BaseModel):
+    user_id: str
+    channel: Channel
+    id: int
+
+
+@app.post("/like")
+async def like(request: LikeRequest):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            f"INSERT OR IGNORE INTO likes VALUES({await get_channel(db, request.channel.id)}, {request.id}, {await get_user(db, request.user_id)})"
+        )
+        await db.commit()
+    return {}
+
+
+class DislikeRequest(BaseModel):
+    user_id: str
+    channel: Channel
+    id: int
+
+
+@app.post("/dislike")
+async def dislike(request: DislikeRequest):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            f"INSERT OR IGNORE INTO dislikes VALUES({await get_channel(db, request.channel.id)}, {request.id}, {await get_user(db, request.user_id)})"
+        )
+        await db.commit()
+    return {}
+
+
+if __name__ == "__main__":
+    config = uvicorn.Config(app=app)
+    server = uvicorn.Server(config)
+    loop.create_task(server.serve())
+    loop.run_forever()
