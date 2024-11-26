@@ -144,6 +144,12 @@ class DigestRequest(BaseModel):
 
 
 def get_popularity_score(message) -> int:
+    if message.reactions is None:
+        return (
+            message.views
+            + message.replies.replies * 10
+        ) 
+
     return (
         message.views
         + len(message.reactions.results) * 5
@@ -164,11 +170,11 @@ def get_wilson_score(likes, dislikes) -> float:
 with open("openai_api_key.txt", "r") as f:
     os.environ["OPENAI_API_KEY"] = f.readline().strip()
 
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+gpt_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 def send_message(text: str) -> str:
     try:
-        response = client.chat.completions.create(
+        response = gpt_client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": text}],
         )
