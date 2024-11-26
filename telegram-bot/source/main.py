@@ -132,7 +132,7 @@ def send_digest(user_id):
     bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
 
-    data = make_data(str(user_id), 5, date.today() - timedelta(days=5), channel_ids)
+    data = make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids)
     logger.warning(data)
 
     response = requests.get(
