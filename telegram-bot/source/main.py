@@ -38,7 +38,9 @@ command_list_help = [
 command_list_settings = [
     "/add <id канала> - подключить канал к дайджесту",
     "/getlist - получить список подключенных каналов",
+    "/getGroups - получить список групп каналов",
     "/del <id канала> - отключить канал от дайджеста",
+    "/addChannelGroup <название группы каналов> - создать группу каналов",
 ]
 
 command_list_help = [
@@ -88,9 +90,19 @@ def help_bot(message):
     bot.send_message(message.from_user.id, "\n\n".join(command_list_help))
 
 
+def send_reaction_buttons(user_id, message_id, channel_id):
+    metadata = f"{user_id},{message_id},{channel_id}"
+    markup = telebot.types.InlineKeyboardMarkup()
+    btn_yes = telebot.types.InlineKeyboardButton("👍", callback_data=f'like_{metadata}')
+    btn_no = telebot.types.InlineKeyboardButton("👎", callback_data=f'dislike_{metadata}')
+    markup.add(btn_yes, btn_no)
+    
+    bot.send_message(user_id, "Понравилось?", reply_markup=markup)
+
 async def forward_messages(user_id, messages):
     for message in messages:
         await client_bot.forward_messages(user_id, message["id"], message["channel"])
+        send_reaction_buttons(user_id, message["id"], message["channel"])
 
 
 def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
@@ -102,7 +114,26 @@ def make_data(user_id: str, limit: int, offset_date: datetime, channel_ids):
     }
 
 
-def send_digest(user_id):
+groups = {
+    "По умолчанию": [],
+}
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_query(call):
+    if call.data.startswith('like'):
+        bot.answer_callback_query(call.id, "Вам понравилось, мы рады!")
+    elif call.data.startswith('dislike'):
+        bot.answer_callback_query(call.id, "Учтем ваши замечания!")
+    elif call.data.startswith('add'):
+        global groups
+        groups[call.data.split('$')[2]].append(call.data.split('$')[1])
+        bot.answer_callback_query(call.id, "Канал успешно добавлен!")
+    elif call.data.startswith('digest'):
+        bot.answer_callback_query(call.id, "Дайджест успешно сгенерирован!")
+        send_digest(int(call.data.split('$')[2]), date.today() - timedelta(days=1), True)
+
+def send_digest(user_id, offset, sendmessage=True):
     channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
 
     if len(channel_ids) == 0:
@@ -112,10 +143,11 @@ def send_digest(user_id):
             "Воспользуйтесь командой /add, чтобы добавить канал.",
         )
         return
-    bot.send_message(user_id, "Дайджест на сегодня:")
+    if sendmessage:
+        bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
 
-    data = make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids)
+    data = make_data(str(user_id), 5, offset, channel_ids)
     logger.warning(data)
 
     response = requests.get(
@@ -135,7 +167,15 @@ def digest_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
-    send_digest(user_id)
+    markup = telebot.types.InlineKeyboardMarkup()
+
+    buttons = [
+        telebot.types.InlineKeyboardButton(group_name, callback_data=f'digest${group_name}${user_id}') 
+        for group_name in groups.keys()
+    ]
+    markup.add(*buttons)
+
+    bot.send_message(user_id, "Для какой группы каналов формируем дайджест?", reply_markup=markup)
 
 
 @bot.message_handler(commands=["settings"])
@@ -151,6 +191,8 @@ def get_title(channel_id):
 
 @bot.message_handler(commands=["add"])
 def add_bot(message):
+    global groups
+
     if not is_started:
         return
     user_id = message.from_user.id
@@ -162,7 +204,17 @@ def add_bot(message):
         return
     channel_id = message_args[1]
     bot_loop.run_until_complete(users.subscribe(user=user_id, channel=channel_id))
-    bot.send_message(user_id, f'Канал "{get_title(channel_id)}" добавлен в список.')
+
+    markup = telebot.types.InlineKeyboardMarkup()
+
+    buttons = [
+        telebot.types.InlineKeyboardButton(group_name, callback_data=f'add${channel_id}${group_name}') 
+        for group_name in groups.keys()
+    ]
+
+    markup.add(*buttons)
+
+    bot.send_message(user_id, f'В какую группу добавить ?', reply_markup=markup)
 
 
 @bot.message_handler(commands=["del"])
@@ -209,11 +261,55 @@ def get_list_bot(message):
     )
 
 
+@bot.message_handler(commands=["getGroups"])
+def get_groups_list_bot(message):
+    if not is_started:
+        return
+    user_id = message.from_user.id
+
+    global groups
+
+    bot.send_message(
+        user_id,
+        "На данный момент вы добавили следующие группы:\n\n" + "\n\n".join(
+            [groupName + " - " + ("Пусто" if not groupChannels else ', '.join(groupChannels)) for groupName, groupChannels in groups.items()]
+        ),
+    )
+
+@bot.message_handler(commands=["calibrate"])
+def calibrate_bot(message):
+    send_digest(message.from_user.id, date.today() - timedelta(days=3), False)
+    bot.send_message(message.from_user.id, "Пройдем калиброку! Оцените сообщения выше и мы подстроим все под вас!")
+
+
+
 @bot.message_handler(commands=["exit"])
 def exit_bot(message):
     if not is_started:
         return
     exit_actions()
+
+
+
+@bot.message_handler(commands=["addChannelGroup"])
+def add_bot(message):
+    if not is_started:
+        return
+    user_id = message.from_user.id
+    message_args = message.text.split()
+    if len(message_args) != 2:
+        bot.send_message(
+            user_id, "Некорректные входные данные! Формат: /addChannelGroup <название группы каналов>."
+        )
+        return
+    group_name = message_args[1]
+    if group_name in groups:
+        bot.send_message(
+            user_id, "Группа с таким именем уже существует!"
+        )
+        return
+    bot.send_message(user_id, f'Группа {group_name} успешно создана!')
+    groups[group_name] = []
 
 
 timesToSend = []
@@ -230,7 +326,7 @@ def clockWatcherRoutine():
                 continue
             if hour == datetime.now().hour and minute == datetime.now().minute:
                 sended[user_id] = curr
-                send_digest(user_id)
+                send_digest(user_id, date.today() - timedelta(days=1))
 
 
 clockWatcher = Thread(target=clockWatcherRoutine)
@@ -250,6 +346,5 @@ def setPeriod_bot(message):
     user_id = message.from_user.id
     period = message.text[10:]
     periodsToSend.append(period)
-
 
 bot.infinity_polling()
