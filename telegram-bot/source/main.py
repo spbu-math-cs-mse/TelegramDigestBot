@@ -119,7 +119,7 @@ def handle_query(call):
         bot.answer_callback_query(call.id, "Учтем ваши замечания!")
 
 
-def send_digest(user_id):
+def send_digest(user_id, offset, sendmessage=True):
     channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
 
     if len(channel_ids) == 0:
@@ -129,10 +129,11 @@ def send_digest(user_id):
             "Воспользуйтесь командой /add, чтобы добавить канал.",
         )
         return
-    bot.send_message(user_id, "Дайджест на сегодня:")
+    if sendmessage:
+        bot.send_message(user_id, "Дайджест на сегодня:")
     headers = {"Content-type": "application/json"}
 
-    data = make_data(str(user_id), 5, date.today() - timedelta(days=1), channel_ids)
+    data = make_data(str(user_id), 5, offset, channel_ids)
     logger.warning(data)
 
     response = requests.get(
@@ -152,7 +153,7 @@ def digest_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
-    send_digest(user_id)
+    send_digest(user_id, date.today() - timedelta(days=1))
 
 
 @bot.message_handler(commands=["settings"])
@@ -225,6 +226,12 @@ def get_list_bot(message):
         ),
     )
 
+@bot.message_handler(commands=["calibrate"])
+def calibrate_bot(message):
+    send_digest(message.from_user.id, date.today() - timedelta(days=3), False)
+    bot.send_message(message.from_user.id, "Пройдем калиброку! Оцените сообщения выше и мы подстроим все под вас!")
+
+
 
 @bot.message_handler(commands=["exit"])
 def exit_bot(message):
@@ -247,7 +254,7 @@ def clockWatcherRoutine():
                 continue
             if hour == datetime.now().hour and minute == datetime.now().minute:
                 sended[user_id] = curr
-                send_digest(user_id)
+                send_digest(user_id, date.today() - timedelta(days=1))
 
 
 clockWatcher = Thread(target=clockWatcherRoutine)
