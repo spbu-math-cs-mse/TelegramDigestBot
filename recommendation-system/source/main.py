@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from datetime import datetime
 from contextlib import asynccontextmanager
 from math import sqrt
+import os
+from openai import OpenAI
 
 DB_PATH = "recommendation-system.db"
 
@@ -142,6 +144,12 @@ class DigestRequest(BaseModel):
 
 
 def get_popularity_score(message) -> int:
+    if message.reactions is None:
+        return (
+            message.views
+            + message.replies.replies * 10
+        ) 
+
     return (
         message.views
         + len(message.reactions.results) * 5
@@ -159,6 +167,20 @@ def get_wilson_score(likes, dislikes) -> float:
         phat + z * z / (2 * n) - z * sqrt((phat * (1 - phat) + z * z / (4 * n)) / n)
     ) / (1 + z * z / n)
 
+with open("openai_api_key.txt", "r") as f:
+    os.environ["OPENAI_API_KEY"] = f.readline().strip()
+
+gpt_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+def send_message(text: str) -> str:
+    try:
+        response = gpt_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": text}],
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Ошибка: {e}"
 
 @app.get("/digest")
 async def digest(request: DigestRequest):
@@ -166,6 +188,7 @@ async def digest(request: DigestRequest):
     offset_date = request.offset_date
     channels = request.channels
     buffer = []
+
     async with aiosqlite.connect(DB_PATH) as db:
         for channel in channels:
             size = (
@@ -180,10 +203,43 @@ async def digest(request: DigestRequest):
                     await get_likes(db, channel.id, message.id),
                     await get_dislikes(db, channel.id, message.id),
                 )
-                buffer.append((score, channel.id, message.id))
-    buffer.sort(reverse=True)
-    return [{"channel": channel, "id": id} for (_, channel, id) in buffer[:limit]]
+                buffer.append(
+                    {
+                        "score": score,
+                        "channel": channel.id,
+                        "id": message.id,
+                        "text": message.message.strip().replace("\n", " "),
+                    }
+                )
 
+    # Попытка сортировки через ChatGPT
+    for attempt in range(3):
+        try:
+            posts = "\n".join(
+                [f"{i}: {item['text']}" for i, item in enumerate(buffer)]
+            )
+            chatgpt_request = (
+                f"У тебя есть {len(buffer)} постов, пронумерованных от 0 до {len(buffer) - 1}.\n\n"
+                f"{posts}\n\n"
+                "Упорядочь их по уровню интересности. Сначала самые интересные, затем менее. "
+                "Ответ пришли в формате: 0,1,2,3,4..., то есть последовательность индексов постов через запятую"
+            )
+
+            response = send_message(chatgpt_request)
+
+            sorted_indices = list(map(int, response.split(",")))
+            sorted_buffer = [buffer[i] for i in sorted_indices]
+
+            return [{"channel": item["channel"], "id": item["id"]} for item in sorted_buffer[:limit]]
+
+        except Exception as e:
+            # Логируем если какая-то ошибка gpt
+            print(f"Попытка {attempt + 1}: ошибка ChatGPT - {e}")
+
+    # Если он с трех раз не смог, логируем это, и сортируем как было раньше
+    print("ChatGPT не смог упорядочить посты. Используем базовую сортировку.")
+    buffer.sort(key=lambda x: x["score"], reverse=True)
+    return [{"channel": item["channel"], "id": item["id"]} for item in buffer[:limit]]
 
 class LikeRequest(BaseModel):
     user_id: str
