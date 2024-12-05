@@ -4,3 +4,6 @@ pytest-cov
 fastapi
 uvicorn 
 Telethon
+openai
+feedparser
+pytz
