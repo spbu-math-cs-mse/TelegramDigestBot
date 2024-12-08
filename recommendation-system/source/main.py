@@ -11,7 +11,9 @@ import os
 from openai import OpenAI
 import feedparser
 import pytz
-import random
+from langchain_core.documents import Document
+from langchain_chroma import Chroma
+from langchain_gigachat.embeddings import GigaChatEmbeddings
 
 DB_PATH = "recommendation-system.db"
 
@@ -23,6 +25,17 @@ loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 client = TelegramClient("recommendation-system", api_id, api_hash, loop=loop)
 client.start()
+
+with open("assets/gigichat.txt", "r") as f:
+    gigichat_key = f.readline().strip()
+
+chroma = Chroma(
+    "recommendation-system",
+    embedding_function=GigaChatEmbeddings(
+        credentials=gigichat_key, scope="GIGACHAT_API_PERS", verify_ssl_certs=False
+    ),
+    persist_directory="chroma",
+)
 
 
 @asynccontextmanager
@@ -163,6 +176,21 @@ def get_wilson_score(likes, dislikes) -> float:
     ) / (1 + z * z / n)
 
 
+async def get_similarity_score(db, text) -> float:
+    documents = chroma.similarity_search(text)
+    ids = [document.metadata["id"] for document in documents]
+    if len(ids) == 0:
+        return 0
+    scores = [
+        get_wilson_score(
+            await get_likes(db, id),
+            await get_dislikes(db, id),
+        )
+        for id in ids
+    ]
+    return sum(scores) / len(documents)
+
+
 with open("assets/openai_api_key.txt", "r") as f:
     os.environ["OPENAI_API_KEY"] = f.readline().strip()
 
@@ -194,9 +222,13 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
             ):
                 link = f"https://t.me/{channel.name}/{message.id}"
                 entity_id = await get_entity(db, link, True)
-                score = get_popularity_score(message) / size + get_wilson_score(
-                    await get_likes(db, entity_id),
-                    await get_dislikes(db, entity_id),
+                score = (
+                    get_popularity_score(message) / size
+                    + get_wilson_score(
+                        await get_likes(db, entity_id),
+                        await get_dislikes(db, entity_id),
+                    )
+                    + await get_similarity_score(db, message.message)
                 )
                 buffer.append(
                     {
@@ -223,10 +255,27 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
 
             sorted_indices = list(map(int, response.split(",")))
             sorted_buffer = [buffer[i] for i in sorted_indices]
-
+            result = sorted_buffer[:limit]
+            async with aiosqlite.connect(DB_PATH) as db:
+                for item in result:
+                    if item["entity_id"] == 0:
+                        item["entity_id"] = await get_entity(db, item["link"])
+                        chroma.add_documents(
+                            [
+                                Document(
+                                    page_content=item["description"],
+                                    metadata={"id": item["entity_id"]},
+                                )
+                            ]
+                        )
             return [
-                {"channel": item["channel"], "id": item["id"]}
-                for item in sorted_buffer[:limit]
+                {
+                    "link": item["link"],
+                    "entity_id": item["entity_id"],
+                    "description": item["description"],
+                    "score": item["score"],
+                }
+                for item in result
             ]
 
         except Exception as e:
@@ -241,11 +290,20 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
         for item in result:
             if item["entity_id"] == 0:
                 item["entity_id"] = await get_entity(db, item["link"])
+                chroma.add_documents(
+                    [
+                        Document(
+                            page_content=item["description"],
+                            metadata={"id": item["entity_id"]},
+                        )
+                    ]
+                )
     return [
         {
             "link": item["link"],
             "entity_id": item["entity_id"],
             "description": item["description"],
+            "score": item["score"],
         }
         for item in result
     ]
@@ -273,22 +331,45 @@ class RSSDigestRequest(BaseModel):
 async def rssdigest_impl(limit: int, offset_date: datetime, feeds: list[Feed]):
     buffer = []
     offset = offset_date.astimezone(pytz.UTC)
-    for feed in feeds:
-        data = feedparser.parse(feed.link)
-        for entry in data.entries:
-            if offset > datetime.strptime(entry.published, "%a, %d %b %Y %H:%M:%S %z"):
-                break
-            buffer.append(
-                {
-                    "link": entry.link,
-                    "description": entry.description,
-                }
-            )
-    random.shuffle(buffer)  # simple ranking
+    async with aiosqlite.connect(DB_PATH) as db:
+        for feed in feeds:
+            data = feedparser.parse(feed.link)
+            for entry in data.entries:
+                if offset > datetime.strptime(
+                    entry.published, "%a, %d %b %Y %H:%M:%S %z"
+                ):
+                    break
+                entity_id = await get_entity(db, entry.link, True)
+                score = (
+                    1.5  # default popularity score
+                    + get_wilson_score(
+                        await get_likes(db, entity_id),
+                        await get_dislikes(db, entity_id),
+                    )
+                    + await get_similarity_score(db, entry.description)
+                )
+                buffer.append(
+                    {
+                        "link": entry.link,
+                        "description": entry.description,
+                        "entity_id": entity_id,
+                        "score": score,
+                    }
+                )
+    buffer.sort(key=lambda x: x["score"], reverse=True)
     result = buffer[:limit]
     async with aiosqlite.connect(DB_PATH) as db:
         for item in result:
-            item["entity_id"] = await get_entity(db, item["link"])
+            if item["entity_id"] == 0:
+                item["entity_id"] = await get_entity(db, item["link"])
+                chroma.add_documents(
+                    [
+                        Document(
+                            page_content=item["description"],
+                            metadata={"id": item["entity_id"]},
+                        )
+                    ]
+                )
     return result
 
 
