@@ -14,6 +14,7 @@ import pytz
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_gigachat.embeddings import GigaChatEmbeddings
+from gigachat import GigaChat
 
 DB_PATH = "recommendation-system.db"
 
@@ -26,7 +27,7 @@ asyncio.set_event_loop(loop)
 client = TelegramClient("recommendation-system", api_id, api_hash, loop=loop)
 client.start()
 
-with open("assets/gigichat.txt", "r") as f:
+with open("assets/gigachat.txt", "r") as f:
     gigichat_key = f.readline().strip()
 
 chroma = Chroma(
@@ -36,6 +37,7 @@ chroma = Chroma(
     ),
     persist_directory="chroma",
 )
+giga = GigaChat(credentials=gigichat_key, model="GigaChat", verify_ssl_certs=False)
 
 
 @asynccontextmanager
@@ -208,6 +210,38 @@ def send_message(text: str) -> str:
         return f"Ошибка: {e}"
 
 
+async def postprocess(result):
+    async with aiosqlite.connect(DB_PATH) as db:
+        for item in result:
+            if item["entity_id"] == 0:
+                item["entity_id"] = await get_entity(db, item["link"])
+                chroma.add_documents(
+                    [
+                        Document(
+                            page_content=item["description"],
+                            metadata={"id": item["entity_id"]},
+                        )
+                    ]
+                )
+            item["description"] = "".join(
+                [
+                    chunk.choices[0].delta.content
+                    for chunk in giga.stream(
+                        f"Опиши в 1 или 2 предложениях главный смысл следующего текста:{item["description"]}"
+                    )
+                ]
+            )
+    return [
+        {
+            "link": item["link"],
+            "entity_id": item["entity_id"],
+            "description": item["description"],
+            "score": item["score"],
+        }
+        for item in result
+    ]
+
+
 async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channel]):
     buffer = []
     async with aiosqlite.connect(DB_PATH) as db:
@@ -256,27 +290,7 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
             sorted_indices = list(map(int, response.split(",")))
             sorted_buffer = [buffer[i] for i in sorted_indices]
             result = sorted_buffer[:limit]
-            async with aiosqlite.connect(DB_PATH) as db:
-                for item in result:
-                    if item["entity_id"] == 0:
-                        item["entity_id"] = await get_entity(db, item["link"])
-                        chroma.add_documents(
-                            [
-                                Document(
-                                    page_content=item["description"],
-                                    metadata={"id": item["entity_id"]},
-                                )
-                            ]
-                        )
-            return [
-                {
-                    "link": item["link"],
-                    "entity_id": item["entity_id"],
-                    "description": item["description"],
-                    "score": item["score"],
-                }
-                for item in result
-            ]
+            return await postprocess(result)
 
         except Exception as e:
             # Логируем если какая-то ошибка gpt
@@ -286,27 +300,7 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
     print("ChatGPT не смог упорядочить посты. Используем базовую сортировку.")
     buffer.sort(key=lambda x: x["score"], reverse=True)
     result = buffer[:limit]
-    async with aiosqlite.connect(DB_PATH) as db:
-        for item in result:
-            if item["entity_id"] == 0:
-                item["entity_id"] = await get_entity(db, item["link"])
-                chroma.add_documents(
-                    [
-                        Document(
-                            page_content=item["description"],
-                            metadata={"id": item["entity_id"]},
-                        )
-                    ]
-                )
-    return [
-        {
-            "link": item["link"],
-            "entity_id": item["entity_id"],
-            "description": item["description"],
-            "score": item["score"],
-        }
-        for item in result
-    ]
+    return await postprocess(result)
 
 
 @app.get("/tgdigest")
