@@ -144,17 +144,12 @@ class DigestRequest(BaseModel):
 
 
 def get_popularity_score(message) -> int:
-    if message.reactions is None:
-        return (
-            message.views
-            + message.replies.replies * 10
-        ) 
-
-    return (
-        message.views
-        + len(message.reactions.results) * 5
-        + message.replies.replies * 10
-    )
+    score = message.views
+    if message.reactions is not None:
+        score += len(message.reactions.results) * 5
+    if message.replies is not None:
+        score += message.replies.replies * 10
+    return score
 
 
 def get_wilson_score(likes, dislikes) -> float:
