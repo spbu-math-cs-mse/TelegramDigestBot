@@ -157,14 +157,12 @@ class TGDigestRequest(BaseModel):
 
 
 def get_popularity_score(message) -> int:
-    if message.reactions is None:
-        return message.views + message.replies.replies * 10
-
-    return (
-        message.views
-        + len(message.reactions.results) * 5
-        + message.replies.replies * 10
-    )
+    score = message.views
+    if message.reactions is not None:
+        score += len(message.reactions.results) * 5
+    if message.replies is not None:
+        score += message.replies.replies * 10
+    return score
 
 
 def get_wilson_score(likes, dislikes) -> float:
@@ -254,7 +252,7 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
             async for message in client.iter_messages(
                 channel.name, limit, offset_date=offset_date, reverse=True
             ):
-                link = f"https://t.me/{channel.name}/{message.id}"
+                link = f"https://t.me/{channel.name[1:]}/{message.id}"
                 entity_id = await get_entity(db, link, True)
                 score = (
                     get_popularity_score(message) / size
