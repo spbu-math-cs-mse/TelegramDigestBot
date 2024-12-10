@@ -144,17 +144,12 @@ class DigestRequest(BaseModel):
 
 
 def get_popularity_score(message) -> int:
-    if message.reactions is None:
-        return (
-            message.views
-            + message.replies.replies * 10
-        ) 
-
-    return (
-        message.views
-        + len(message.reactions.results) * 5
-        + message.replies.replies * 10
-    )
+    score = message.views
+    if message.reactions is not None:
+        score += len(message.reactions.results) * 5
+    if message.replies is not None:
+        score += message.replies.replies * 10
+    return score
 
 
 def get_wilson_score(likes, dislikes) -> float:
@@ -167,7 +162,10 @@ def get_wilson_score(likes, dislikes) -> float:
         phat + z * z / (2 * n) - z * sqrt((phat * (1 - phat) + z * z / (4 * n)) / n)
     ) / (1 + z * z / n)
 
-with open("openai_api_key.txt", "r") as f:
+current_dir = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(current_dir, "openai_api_key.txt")
+
+with open(file_path, "r") as f:
     os.environ["OPENAI_API_KEY"] = f.readline().strip()
 
 gpt_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
