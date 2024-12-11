@@ -78,7 +78,7 @@ def start_bot(message):
     )
 
     bot.send_message(
-        message.from_user.id, welcome_text, reply_markup=markup, parse_mode='Markdown'
+        message.from_user.id, welcome_text, reply_markup=markup, parse_mode="Markdown"
     )
 
 
@@ -90,9 +90,13 @@ def help_bot(message):
 
     # Добавление кнопки для быстрого доступа к настройкам
     markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("⚙️ Настройки", callback_data="open_settings"))
+    markup.add(
+        telebot.types.InlineKeyboardButton("⚙️ Настройки", callback_data="open_settings")
+    )
 
-    bot.send_message(message.from_user.id, help_text, reply_markup=markup, parse_mode='Markdown')
+    bot.send_message(
+        message.from_user.id, help_text, reply_markup=markup, parse_mode="Markdown"
+    )
 
 
 def send_reaction_buttons(user_id, entity_id):
@@ -109,8 +113,7 @@ def send_reaction_buttons(user_id, entity_id):
 
 async def forward_messages(user_id, messages):
     for message in messages:
-        bot.send_message(user_id, message["description"])
-        bot.send_message(user_id, message["link"])
+        bot.send_message(user_id, message["description"] + "\n" + message["link"])
         send_reaction_buttons(user_id, message["entity_id"])
 
 
@@ -131,39 +134,33 @@ groups = {
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     headers = {"Content-type": "application/json"}
-    if call.data.startswith('like'):
+    if call.data.startswith("like"):
         buffer = call.data[5:].split(",")
-        data = {
-            "user": buffer[0],
-            "entity_id": int(buffer[1])
-        }
+        data = {"user": buffer[0], "entity_id": int(buffer[1])}
         response = requests.post(
             "http://127.0.0.1:8000/dislike",
             headers=headers,
             json=data,
         )
         bot.answer_callback_query(call.id, "Спасибо за вашу оценку! 👍")
-    elif call.data.startswith('dislike'):
+    elif call.data.startswith("dislike"):
         buffer = call.data[8:].split(",")
-        data = {
-            "user": buffer[0],
-            "entity_id": int(buffer[1])
-        }
+        data = {"user": buffer[0], "entity_id": int(buffer[1])}
         response = requests.post(
             "http://127.0.0.1:8000/dislike",
             headers=headers,
             json=data,
         )
         bot.answer_callback_query(call.id, "Учтём ваши замечания! 🙁")
-    elif call.data.startswith('add'):
-        _, channel_id, group_name = call.data.split('$')
+    elif call.data.startswith("add"):
+        _, channel_id, group_name = call.data.split("$")
         groups[group_name].append(channel_id)
         bot.answer_callback_query(call.id, "Канал успешно добавлен! ✅")
-    elif call.data.startswith('digest'):
-        _, group_name, user_id = call.data.split('$')
+    elif call.data.startswith("digest"):
+        _, group_name, user_id = call.data.split("$")
         bot.answer_callback_query(call.id, "Дайджест генерируется... ⏳")
         send_digest(int(user_id), date.today() - timedelta(days=1), True)
-    elif call.data == 'open_settings':
+    elif call.data == "open_settings":
         # Отправка меню настроек
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row("/add", "/del")
@@ -182,7 +179,7 @@ def send_digest(user_id, offset, sendmessage=True):
         )
         return
     if sendmessage:
-        bot.send_message(user_id, "📅 *Дайджест на сегодня:*", parse_mode='Markdown')
+        bot.send_message(user_id, "📅 *Дайджест на сегодня:*", parse_mode="Markdown")
     headers = {"Content-type": "application/json"}
 
     data = make_data(str(user_id), 5, offset, channel_ids)
@@ -208,13 +205,19 @@ def digest_bot(message):
     markup = telebot.types.InlineKeyboardMarkup()
 
     buttons = [
-        telebot.types.InlineKeyboardButton(group_name, callback_data=f'digest${group_name}${user_id}')
+        telebot.types.InlineKeyboardButton(
+            group_name, callback_data=f"digest${group_name}${user_id}"
+        )
         for group_name in groups.keys()
     ]
     markup.add(*buttons)
 
-    bot.send_message(user_id, "📂 *Выберите группу каналов для формирования дайджеста:*", reply_markup=markup,
-                     parse_mode='Markdown')
+    bot.send_message(
+        user_id,
+        "📂 *Выберите группу каналов для формирования дайджеста:*",
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
 
 
 @bot.message_handler(commands=["settings"])
@@ -227,7 +230,9 @@ def settings_bot(message):
     markup.row("/addChannelGroup", "/back_to_main")
 
     settings_text = "*Настройки пользователя:*"
-    bot.send_message(message.from_user.id, settings_text, reply_markup=markup, parse_mode='Markdown')
+    bot.send_message(
+        message.from_user.id, settings_text, reply_markup=markup, parse_mode="Markdown"
+    )
 
 
 def get_title(channel_id):
@@ -249,22 +254,34 @@ def add_bot(message):
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
-            user_id, "❌ Некорректные входные данные!\n*Формат:* /add <id канала>", parse_mode='Markdown'
+            user_id,
+            "❌ Некорректные входные данные!\n*Формат:* /add <id канала>",
+            parse_mode="Markdown",
         )
         return
     channel_id = message_args[1]
+    title = get_title(channel_id)
+    if title == "Неизвестный канал":
+        bot.send_message(user_id, "❌ Некорректное имя канала", parse_mode="Markdown")
+        return
     bot_loop.run_until_complete(users.subscribe(user=user_id, channel=channel_id))
 
     markup = telebot.types.InlineKeyboardMarkup()
     buttons = [
-        telebot.types.InlineKeyboardButton(group_name, callback_data=f'add${channel_id}${group_name}')
+        telebot.types.InlineKeyboardButton(
+            group_name, callback_data=f"add${channel_id}${group_name}"
+        )
         for group_name in groups.keys()
     ]
 
     markup.add(*buttons)
 
-    bot.send_message(user_id, f"📂 В какую группу добавить канал *{get_title(channel_id)}*?", reply_markup=markup,
-                     parse_mode='Markdown')
+    bot.send_message(
+        user_id,
+        f"📂 В какую группу добавить канал *{title}*?",
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
 
 
 @bot.message_handler(commands=["del"])
@@ -275,17 +292,27 @@ def del_bot(message):
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
-            user_id, "❌ Некорректные входные данные!\n*Формат:* /del <id канала>", parse_mode='Markdown'
+            user_id,
+            "❌ Некорректные входные данные!\n*Формат:* /del <id канала>",
+            parse_mode="Markdown",
         )
         return
     channel_id = message_args[1]
+    title = get_title(channel_id)
+    if title == "Неизвестный канал":
+        bot.send_message(user_id, "❌ Некорректное имя канала", parse_mode="Markdown")
+        return
     deleted = bot_loop.run_until_complete(
         users.unsubscribe(user=user_id, channel=channel_id)
     )
     if not deleted:
-        bot.send_message(user_id, f'❌ Канала "{get_title(channel_id)}" нет в списке!', parse_mode='Markdown')
+        bot.send_message(
+            user_id, f'❌ Канала "{title}" нет в списке!', parse_mode="Markdown"
+        )
         return
-    bot.send_message(user_id, f'✅ Канал "{get_title(channel_id)}" был удалён из списка.', parse_mode='Markdown')
+    bot.send_message(
+        user_id, f'✅ Канал "{title}" был удалён из списка.', parse_mode="Markdown"
+    )
 
 
 @bot.message_handler(commands=["getlist"])
@@ -308,7 +335,7 @@ def get_list_bot(message):
     bot.send_message(
         user_id,
         f"📃 *Список подключённых каналов:*\n{channels_text}",
-        parse_mode='Markdown',
+        parse_mode="Markdown",
     )
 
 
@@ -326,21 +353,25 @@ def get_groups_list_bot(message):
 
     groups_text = "\n\n".join(
         [
-            f"• *{group_name}* - " + ("Пусто" if not groupChannels else ', '.join(groupChannels))
+            f"• *{group_name}* - "
+            + ("Пусто" if not groupChannels else ", ".join(groupChannels))
             for group_name, groupChannels in groups.items()
         ]
     )
     bot.send_message(
         user_id,
         f"📂 *Список групп каналов:*\n\n{groups_text}",
-        parse_mode='Markdown',
+        parse_mode="Markdown",
     )
 
 
 @bot.message_handler(commands=["calibrate"])
 def calibrate_bot(message):
     send_digest(message.from_user.id, date.today() - timedelta(days=3), False)
-    bot.send_message(message.from_user.id, "🔧 Пройдем калибровку! Оцените сообщения выше, и мы подстроим все под вас!")
+    bot.send_message(
+        message.from_user.id,
+        "🔧 Пройдем калибровку! Оцените сообщения выше, и мы подстроим все под вас!",
+    )
 
 
 @bot.message_handler(commands=["exit"])
@@ -351,8 +382,12 @@ def exit_bot(message):
     # Возврат к главной клавиатуре после выхода
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("/start")
-    bot.send_message(message.from_user.id, "👋 Работа бота завершена. Напишите /start для повторного запуска.",
-                     reply_markup=markup)
+    bot.send_message(
+        message.from_user.id,
+        "👋 Работа бота завершена. Напишите /start для повторного запуска.",
+        reply_markup=markup,
+    )
+
 
 @bot.message_handler(commands=["addChannelGroup"])
 def add_channel_group_bot(message):
@@ -362,18 +397,21 @@ def add_channel_group_bot(message):
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
-            user_id, "❌ Некорректные входные данные!\n*Формат:* /addChannelGroup <название группы каналов>",
-            parse_mode='Markdown'
+            user_id,
+            "❌ Некорректные входные данные!\n*Формат:* /addChannelGroup <название группы каналов>",
+            parse_mode="Markdown",
         )
         return
     group_name = message_args[1]
     if group_name in groups:
         bot.send_message(
-            user_id, "❌ Группа с таким именем уже существует!", parse_mode='Markdown'
+            user_id, "❌ Группа с таким именем уже существует!", parse_mode="Markdown"
         )
         return
     groups[group_name] = []
-    bot.send_message(user_id, f"✅ Группа *{group_name}* успешно создана!", parse_mode='Markdown')
+    bot.send_message(
+        user_id, f"✅ Группа *{group_name}* успешно создана!", parse_mode="Markdown"
+    )
 
 
 timesToSend = []
@@ -408,10 +446,15 @@ def setTime_bot(message):
         if not (0 <= hour < 24 and 0 <= minute < 60):
             raise ValueError
         timesToSend.append((user_id, hour, minute))
-        bot.send_message(user_id, f"⏰ Время отправки дайджеста установлено на {hour:02d}:{minute:02d}.")
+        bot.send_message(
+            user_id,
+            f"⏰ Время отправки дайджеста установлено на {hour:02d}:{minute:02d}.",
+        )
     except (IndexError, ValueError):
         bot.send_message(
-            user_id, "❌ Некорректный формат! Используйте /setTime hh:mm", parse_mode='Markdown'
+            user_id,
+            "❌ Некорректный формат! Используйте /setTime hh:mm",
+            parse_mode="Markdown",
         )
 
 
@@ -423,10 +466,15 @@ def setPeriod_bot(message):
         if period <= 0:
             raise ValueError
         periodsToSend.append((user_id, period))
-        bot.send_message(user_id, f"📅 Частота отправки дайджеста установлена на каждые {period} дней.")
+        bot.send_message(
+            user_id,
+            f"📅 Частота отправки дайджеста установлена на каждые {period} дней.",
+        )
     except (IndexError, ValueError):
         bot.send_message(
-            user_id, "❌ Некорректный формат! Используйте /setPeriod n (где n - число дней)", parse_mode='Markdown'
+            user_id,
+            "❌ Некорректный формат! Используйте /setPeriod n (где n - число дней)",
+            parse_mode="Markdown",
         )
 
 
@@ -438,7 +486,9 @@ def back_to_main(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("/help", "/digest")
     markup.row("/settings", "/exit")
-    bot.send_message(message.from_user.id, "🔙 Вернулись в главное меню.", reply_markup=markup)
+    bot.send_message(
+        message.from_user.id, "🔙 Вернулись в главное меню.", reply_markup=markup
+    )
 
 
 bot.infinity_polling()

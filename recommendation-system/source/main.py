@@ -157,11 +157,15 @@ class TGDigestRequest(BaseModel):
 
 
 def get_popularity_score(message) -> int:
-    score = message.views
+    score = 0
+    if message.views is not None:
+        message.views
     if message.reactions is not None:
-        score += len(message.reactions.results) * 5
+        if message.reactions.results is not None:
+            score += len(message.reactions.results) * 5
     if message.replies is not None:
-        score += message.replies.replies * 10
+        if message.replies.replies is not None:
+            score += message.replies.replies * 10
     return score
 
 
@@ -252,6 +256,8 @@ async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channe
             async for message in client.iter_messages(
                 channel.name, limit, offset_date=offset_date, reverse=True
             ):
+                if message.message is None:
+                    continue
                 link = f"https://t.me/{channel.name[1:]}/{message.id}"
                 entity_id = await get_entity(db, link, True)
                 score = (
@@ -306,6 +312,7 @@ async def tgdigest(request: TGDigestRequest):
     try:
         return await tgdigest_impl(request.limit, request.offset_date, request.channels)
     except Exception as e:
+        raise e
         raise HTTPException(status_code=400, detail=str(e))
 
 
