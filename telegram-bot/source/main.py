@@ -29,6 +29,7 @@ command_list_help = [
     "/help - Вывести список команд",
     "/setTime hh:mm - Установить время отправки дайджеста (в формате час:минута)",
     "/setPeriod n - Установить частоту отправки дайджеста (n в днях)",
+    "/setLimit n - Установить размер дайджеста (где n - число новостей)",
     "/digest - Получить дайджест",
     "/settings - Вывести команды для пользовательских настроек",
     "/exit - Завершить работу",
@@ -130,6 +131,8 @@ groups = {
     "По умолчанию": [],
 }
 
+limit = 5
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
@@ -182,7 +185,7 @@ def send_digest(user_id, offset, sendmessage=True):
         bot.send_message(user_id, "📅 *Дайджест на сегодня:*", parse_mode="Markdown")
     headers = {"Content-type": "application/json"}
 
-    data = make_data(str(user_id), 5, offset, channel_ids)
+    data = make_data(str(user_id), limit, offset, channel_ids)
     logger.info(f"Запрос дайджеста: {data}")
 
     response = requests.get(
@@ -474,6 +477,27 @@ def setPeriod_bot(message):
         bot.send_message(
             user_id,
             "❌ Некорректный формат! Используйте /setPeriod n (где n - число дней)",
+            parse_mode="Markdown",
+        )
+
+
+@bot.message_handler(commands=["setLimit"])
+def setLimit_bot(message):
+    user_id = message.from_user.id
+    try:
+        parsed = int(message.text.split()[1])
+        if parsed <= 0:
+            raise ValueError
+        global limit
+        limit = parsed
+        bot.send_message(
+            user_id,
+            f"#️⃣ Размер дайджеста установлен на {limit}.",
+        )
+    except (IndexError, ValueError):
+        bot.send_message(
+            user_id,
+            "❌ Некорректный формат! Используйте /setLimit n (где n - число новостей)",
             parse_mode="Markdown",
         )
 
