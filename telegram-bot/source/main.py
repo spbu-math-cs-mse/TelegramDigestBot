@@ -162,7 +162,12 @@ def handle_query(call):
     elif call.data.startswith("digest"):
         _, group_name, user_id = call.data.split("$")
         bot.answer_callback_query(call.id, "Дайджест генерируется... ⏳")
-        send_digest(int(user_id), date.today() - timedelta(days=1), True)
+        global periodsToSend
+        send_digest(
+            int(user_id),
+            date.today() - timedelta(days=periodsToSend.get(int(user_id), 1)),
+            True,
+        )
     elif call.data == "open_settings":
         # Отправка меню настроек
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -418,7 +423,7 @@ def add_channel_group_bot(message):
 
 
 timesToSend = []
-periodsToSend = []
+periodsToSend = {}
 sended = {}
 
 
@@ -432,7 +437,10 @@ def clockWatcherRoutine():
                 continue
             if hour == current_time.hour and minute == current_time.minute:
                 sended[user_id] = curr_date
-                send_digest(user_id, date.today() - timedelta(days=1))
+                send_digest(
+                    user_id,
+                    date.today() - timedelta(days=periodsToSend.get(user_id, 1)),
+                )
 
 
 clockWatcher = Thread(target=clockWatcherRoutine)
@@ -468,7 +476,7 @@ def setPeriod_bot(message):
         period = int(message.text.split()[1])
         if period <= 0:
             raise ValueError
-        periodsToSend.append((user_id, period))
+        periodsToSend[user_id] = period
         bot.send_message(
             user_id,
             f"📅 Частота отправки дайджеста установлена на каждые {period} дней.",
