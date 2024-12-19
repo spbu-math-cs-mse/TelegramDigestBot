@@ -25,12 +25,64 @@ def register_user():
             "login": login, 
             "name": name, 
             "last_timestamp": 0,
+            "limit": 5,
+            "period": 1,
             "channels": []
         }
         users.insert_one(user)
         user = users.find_one({"login": login}, {'_id': 0})
         return jsonify({"ok": user}), 201
     return jsonify({"error": user}), 400
+
+
+@app.route('/limit', methods=['GET'])
+def get_limit():
+    login = request.get_json()['login']
+    user = users.find_one({"login": login})
+    if user is None:
+        return {"error": f"User {login} not found"}, 404
+    limit = user['limit']
+    return {"ok": limit}, 200
+
+
+@app.route('/limit', methods=['PUT'])
+def set_limit():
+    data = request.get_json()
+    login = data['login']
+    limit = data['limit']
+    user = users.find_one({"login": login})
+    if user is None:
+        return {"error": f"User {login} not found"}, 404
+    users.update_one(
+        {'login': login},
+        {'$set': {'limit': limit}}
+    )
+    return {"ok": limit}, 200
+
+
+@app.route('/period', methods=['GET'])
+def get_period():
+    login = request.get_json()['login']
+    user = users.find_one({"login": login})
+    if user is None:
+        return {"error": f"User {login} not found"}, 404
+    period = user['period']
+    return {"ok": period}, 200
+
+
+@app.route('/period', methods=['PUT'])
+def set_pariod():
+    data = request.get_json()
+    login = data['login']
+    period = data['period']
+    user = users.find_one({"login": login})
+    if user is None:
+        return {"error": f"User {login} not found"}, 404
+    users.update_one(
+        {'login': login},
+        {'$set': {'period': period}}
+    )
+    return {"ok": period}, 200
 
 
 @app.route('/channels', methods=['GET'])

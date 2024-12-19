@@ -23,6 +23,28 @@ class UserService:
         return await self._ok("DELETE", "drop", data={
             "login": user
         }) is not None
+    
+    async def get_limit(self, login) -> int | None:
+        return await self._ok("GET", "limit", data={
+            "login": login,
+        })
+
+    async def set_limit(self, login, limit) -> bool:
+        return await self._ok("PUT", "limit", data={
+            "login": login,
+            "limit": limit
+        }) is not None
+    
+    async def get_period(self, login) -> int | None:
+        return await self._ok("GET", "period", data={
+            "login": login,
+        })
+
+    async def set_period(self, login, period) -> bool:
+        return await self._ok("PUT", "period", data={
+            "login": login,
+            "period": period
+        }) is not None
 
     async def subscribe(self, user, channel) -> bool:
         return await self._ok("PUT", "subscribe", data={
