@@ -131,8 +131,6 @@ groups = {
     "По умолчанию": [],
 }
 
-limit = 5
-
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
@@ -162,10 +160,12 @@ def handle_query(call):
     elif call.data.startswith("digest"):
         _, group_name, user_id = call.data.split("$")
         bot.answer_callback_query(call.id, "Дайджест генерируется... ⏳")
-        global periodsToSend
         send_digest(
             int(user_id),
-            date.today() - timedelta(days=periodsToSend.get(int(user_id), 1)),
+            date.today()
+            - timedelta(
+                days=bot_loop.run_until_complete(users.get_period(user_id)) or 1
+            ),
             True,
         )
     elif call.data == "open_settings":
@@ -190,7 +190,12 @@ def send_digest(user_id, offset, sendmessage=True):
         bot.send_message(user_id, "📅 *Дайджест на сегодня:*", parse_mode="Markdown")
     headers = {"Content-type": "application/json"}
 
-    data = make_data(str(user_id), limit, offset, channel_ids)
+    data = make_data(
+        str(user_id),
+        bot_loop.run_until_complete(users.get_limit(user_id)),
+        offset,
+        channel_ids,
+    )
     logger.info(f"Запрос дайджеста: {data}")
 
     response = requests.get(
@@ -423,7 +428,6 @@ def add_channel_group_bot(message):
 
 
 timesToSend = []
-periodsToSend = {}
 sended = {}
 
 
@@ -439,7 +443,10 @@ def clockWatcherRoutine():
                 sended[user_id] = curr_date
                 send_digest(
                     user_id,
-                    date.today() - timedelta(days=periodsToSend.get(user_id, 1)),
+                    date.today()
+                    - timedelta(
+                        days=bot_loop.run_until_complete(users.get_period(user_id)) or 1
+                    ),
                 )
 
 
@@ -476,7 +483,8 @@ def setPeriod_bot(message):
         period = int(message.text.split()[1])
         if period <= 0:
             raise ValueError
-        periodsToSend[user_id] = period
+        if not bot_loop.run_until_complete(users.set_period(user_id, period)):
+            raise RuntimeError("Не получилось сохранить период в БД")
         bot.send_message(
             user_id,
             f"📅 Частота отправки дайджеста установлена на каждые {period} дней.",
@@ -485,6 +493,12 @@ def setPeriod_bot(message):
         bot.send_message(
             user_id,
             "❌ Некорректный формат! Используйте /setPeriod n (где n - число дней)",
+            parse_mode="Markdown",
+        )
+    except RuntimeError:
+        bot.send_message(
+            user_id,
+            "❌ Не получилось установить период, попробуйте позже",
             parse_mode="Markdown",
         )
 
@@ -496,8 +510,9 @@ def setLimit_bot(message):
         parsed = int(message.text.split()[1])
         if parsed <= 0:
             raise ValueError
-        global limit
         limit = parsed
+        if not bot_loop.run_until_complete(users.set_limit(user_id, limit)):
+            raise RuntimeError("Не получилось сохранить период в БД")
         bot.send_message(
             user_id,
             f"#️⃣ Размер дайджеста установлен на {limit}.",
@@ -506,6 +521,12 @@ def setLimit_bot(message):
         bot.send_message(
             user_id,
             "❌ Некорректный формат! Используйте /setLimit n (где n - число новостей)",
+            parse_mode="Markdown",
+        )
+    except RuntimeError:
+        bot.send_message(
+            user_id,
+            "❌ Не получилось установить лимит, попробуйте позже",
             parse_mode="Markdown",
         )
 
