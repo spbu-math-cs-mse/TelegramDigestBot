@@ -166,6 +166,15 @@ def unsubscribe():
     return {'error': 'Bad request'}, 404
 
 
+@app.route('/user', methods=['GET'])
+def get_user():
+    login = request.get_json()['login']
+    user = users.find_one({"login": login})
+    if user is None:
+        return {'error': f'User {login} not found'}, 404
+    return {"ok": login}, 200
+
+
 @app.route('/drop', methods=['DELETE'])
 def drop_user():
     login = request.get_json()['login']

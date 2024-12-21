@@ -68,6 +68,11 @@ class UserService:
             "feed": feed
         }) is not None
     
+    async def check_user(self, login) -> bool:
+        return await self._ok("GET", "user", data={
+            "login": login,
+        }) is not None
+    
     async def channels(self, user) -> list[str] | None:
         return await self._ok("GET", "/channels", data={
             "login": user

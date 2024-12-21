@@ -43,30 +43,16 @@ command_list_settings = [
     "/addChannelGroup <название группы каналов> - Создать группу каналов",
 ]
 
-is_started = False
-
 users = bot_loop.run_until_complete(UserService().init("127.0.0.1", 5000))
-
-
-def start_actions():
-    global is_started
-    is_started = True
-
-
-def exit_actions():
-    global is_started
-    is_started = False
 
 
 @bot.message_handler(commands=["start"])
 def start_bot(message):
-    if is_started:
+    user_id = message.from_user.id
+    if bot_loop.run_until_complete(users.check_user(login=user_id)):
         return
-    start_actions()
 
-    bot_loop.run_until_complete(
-        users.register_user(login=message.from_user.id, name=str(message.from_user.id))
-    )
+    bot_loop.run_until_complete(users.register_user(login=user_id, name=str(user_id)))
 
     # Создание главной клавиатуры
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -85,7 +71,8 @@ def start_bot(message):
 
 @bot.message_handler(commands=["help"])
 def help_bot(message):
-    if not is_started:
+    user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
         return
     help_text = "*Список доступных команд:*\n\n" + "\n".join(command_list_help)
 
@@ -95,9 +82,7 @@ def help_bot(message):
         telebot.types.InlineKeyboardButton("⚙️ Настройки", callback_data="open_settings")
     )
 
-    bot.send_message(
-        message.from_user.id, help_text, reply_markup=markup, parse_mode="Markdown"
-    )
+    bot.send_message(user_id, help_text, reply_markup=markup, parse_mode="Markdown")
 
 
 def send_reaction_buttons(user_id, entity_id):
@@ -212,9 +197,9 @@ def send_digest(user_id, offset, sendmessage=True):
 
 @bot.message_handler(commands=["digest"])
 def digest_bot(message):
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
     markup = telebot.types.InlineKeyboardMarkup()
 
     buttons = [
@@ -235,7 +220,8 @@ def digest_bot(message):
 
 @bot.message_handler(commands=["settings"])
 def settings_bot(message):
-    if not is_started:
+    user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
         return
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("/addChannel", "/delChannel")
@@ -244,9 +230,7 @@ def settings_bot(message):
     markup.row("/addChannelGroup", "/back_to_main")
 
     settings_text = "*Настройки пользователя:*"
-    bot.send_message(
-        message.from_user.id, settings_text, reply_markup=markup, parse_mode="Markdown"
-    )
+    bot.send_message(user_id, settings_text, reply_markup=markup, parse_mode="Markdown")
 
 
 def get_title(channel_id):
@@ -261,10 +245,9 @@ def get_title(channel_id):
 @bot.message_handler(commands=["addChannel"])
 def add_channel_bot(message):
     global groups
-
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
@@ -300,9 +283,9 @@ def add_channel_bot(message):
 
 @bot.message_handler(commands=["delChannel"])
 def del_channel_bot(message):
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
@@ -332,10 +315,9 @@ def del_channel_bot(message):
 @bot.message_handler(commands=["addFeed"])
 def add_feed_bot(message):
     global groups
-
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
@@ -367,9 +349,9 @@ def add_feed_bot(message):
 
 @bot.message_handler(commands=["delFeed"])
 def del_feed_bot(message):
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
@@ -392,9 +374,9 @@ def del_feed_bot(message):
 
 @bot.message_handler(commands=["getlist"])
 def get_list_bot(message):
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
 
     channel_ids = bot_loop.run_until_complete(users.channels(user=user_id))
 
@@ -416,9 +398,9 @@ def get_list_bot(message):
 
 @bot.message_handler(commands=["getGroups"])
 def get_groups_list_bot(message):
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
 
     global groups
 
@@ -451,14 +433,14 @@ def calibrate_bot(message):
 
 @bot.message_handler(commands=["exit"])
 def exit_bot(message):
-    if not is_started:
+    user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
         return
-    exit_actions()
     # Возврат к главной клавиатуре после выхода
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("/start")
     bot.send_message(
-        message.from_user.id,
+        user_id,
         "👋 Работа бота завершена. Напишите /start для повторного запуска.",
         reply_markup=markup,
     )
@@ -466,9 +448,9 @@ def exit_bot(message):
 
 @bot.message_handler(commands=["addChannelGroup"])
 def add_channel_group_bot(message):
-    if not is_started:
-        return
     user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
+        return
     message_args = message.text.split()
     if len(message_args) != 2:
         bot.send_message(
@@ -596,14 +578,13 @@ def setLimit_bot(message):
 # Обработка кнопки возврата к главной клавиатуре из настроек
 @bot.message_handler(func=lambda message: message.text == "/back_to_main")
 def back_to_main(message):
-    if not is_started:
+    user_id = message.from_user.id
+    if not bot_loop.run_until_complete(users.check_user(login=user_id)):
         return
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("/help", "/digest")
     markup.row("/settings", "/exit")
-    bot.send_message(
-        message.from_user.id, "🔙 Вернулись в главное меню.", reply_markup=markup
-    )
+    bot.send_message(user_id, "🔙 Вернулись в главное меню.", reply_markup=markup)
 
 
 bot.infinity_polling()
