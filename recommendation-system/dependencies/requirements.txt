@@ -4,3 +4,9 @@ pytest-cov
 fastapi
 uvicorn 
 Telethon
+openai
+feedparser
+pytz
+gigachat
+langchain-gigachat
+langchain-chroma
