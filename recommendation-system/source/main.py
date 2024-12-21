@@ -181,7 +181,7 @@ def get_wilson_score(likes, dislikes) -> float:
 
 
 async def get_similarity_score(db, text) -> float:
-    documents = chroma.similarity_search(text)
+    documents = chroma.similarity_search(text[:512])
     ids = [document.metadata["id"] for document in documents]
     if len(ids) == 0:
         return 0
@@ -215,6 +215,14 @@ def send_message(text: str) -> str:
 async def postprocess(result):
     async with aiosqlite.connect(DB_PATH) as db:
         for item in result:
+            item["description"] = "".join(
+                [
+                    chunk.choices[0].delta.content
+                    for chunk in giga.stream(
+                        f"Опиши в 1 или 2 предложениях главный смысл следующего текста:{item["description"]}"
+                    )
+                ]
+            )
             if item["entity_id"] == 0:
                 item["entity_id"] = await get_entity(db, item["link"])
                 chroma.add_documents(
@@ -225,14 +233,6 @@ async def postprocess(result):
                         )
                     ]
                 )
-            item["description"] = "".join(
-                [
-                    chunk.choices[0].delta.content
-                    for chunk in giga.stream(
-                        f"Опиши в 1 или 2 предложениях главный смысл следующего текста:{item["description"]}"
-                    )
-                ]
-            )
     return [
         {
             "link": item["link"],
@@ -312,7 +312,6 @@ async def tgdigest(request: TGDigestRequest):
     try:
         return await tgdigest_impl(request.limit, request.offset_date, request.channels)
     except Exception as e:
-        raise e
         raise HTTPException(status_code=400, detail=str(e))
 
 

@@ -46,19 +46,34 @@ class UserService:
             "period": period
         }) is not None
 
-    async def subscribe(self, user, channel) -> bool:
+    async def subscribe(self, login, channel = None, feed = None) -> bool:
+        if channel is not None:
+            return await self._ok("PUT", "subscribe", data={
+                "login": login,
+                "channel": channel
+            }) is not None
         return await self._ok("PUT", "subscribe", data={
-            "user": user,
-            "channel": channel
+            "login": login,
+            "feed": feed
         }) is not None
     
-    async def unsubscribe(self, user, channel) -> bool:
+    async def unsubscribe(self, login, channel = None, feed = None) -> bool:
+        if channel is not None:
+            return await self._ok("PUT", "unsubscribe", data={
+                "login": login,
+                "channel": channel
+            }) is not None
         return await self._ok("PUT", "unsubscribe", data={
-            "user": user,
-            "channel": channel
+            "login": login,
+            "feed": feed
         }) is not None
     
     async def channels(self, user) -> list[str] | None:
         return await self._ok("GET", "/channels", data={
+            "login": user
+        })
+    
+    async def feeds(self, user) -> list[str] | None:
+        return await self._ok("GET", "/feeds", data={
             "login": user
         })

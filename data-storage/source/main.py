@@ -27,7 +27,8 @@ def register_user():
             "last_timestamp": 0,
             "limit": 5,
             "period": 1,
-            "channels": []
+            "channels": [],
+            "feeds": []
         }
         users.insert_one(user)
         user = users.find_one({"login": login}, {'_id': 0})
@@ -95,46 +96,74 @@ def get_channels():
     return {"ok": channels}, 200
 
 
+@app.route('/feeds', methods=['GET'])
+def get_feeds():
+    login = request.get_json()['login']
+    user = users.find_one({"login": login})
+    if user is None:
+        return {"error": f"User {login} not found"}, 404
+    feeds = user['feeds']
+    return {"ok": feeds}, 200
+
+
 @app.route('/subscribe', methods=['PUT'])
 def subscribe():
     data = request.get_json()
 
-    user_login = data['user']
-    channel_login = data['channel']
-
-    user = users.find_one({"login": user_login})
+    login = data['login']
+    user = users.find_one({"login": login})
     if user is None:
-        return {'error': f'User {user_login} not found'}, 404
-    if channel_login in user['channels']:
-        return {'error': f'User {user_login} has already subscribed to channel {channel_login}'}
+        return {'error': f'User {user} not found'}, 404
     
-    users.update_one(
-        {'login': user_login},
-        {'$push': {'channels': channel_login}}
-    )
-
-    return {"ok": channel_login}, 200
+    if 'channel' in data:
+        channel = data['channel']
+        if channel in user['channels']:
+            return {'error': f'User {login} has already subscribed to channel {channel}'}
+        users.update_one(
+            {'login': login},
+            {'$push': {'channels': channel}}
+        )
+        return {"ok": channel}, 200
+    if 'feed' in data:
+        feed = data['feed']
+        if feed in user['feeds']:
+            return {'error': f'User {login}  has already subscribed to feed {feed}'}
+        users.update_one(
+            {'login': login},
+            {'$push': {'feeds': feed}}
+        )
+        return {"ok": feed}, 200
+    return {'error': 'Bad request'}, 404
 
 
 @app.route('/unsubscribe', methods=['PUT'])
 def unsubscribe():
     data = request.get_json()
 
-    user_login = data['user']
-    channel_login = data['channel']
-
-    user = users.find_one({"login": user_login})
+    login = data['login']
+    user = users.find_one({"login": login})
     if user is None:
-        return {'error': f'User {user_login} not found'}, 404
-    if channel_login not in user['channels']:
-        return {'error': f'User {user_login} not subscribed to channel {channel_login}'}
-    
-    users.update_one(
-        {'user_id': user_login},
-        {'$pull': {'channels': channel_login}}
-    )
+        return {'error': f'User {login} not found'}, 404
 
-    return {"ok": channel_login}, 200
+    if 'channel' in data:
+        channel = data['channel']    
+        if channel not in user['channels']:
+            return {'error': f'User {login} not subscribed to channel {channel}'}
+        users.update_one(
+            {'login': login},
+            {'$pull': {'channels': channel}}
+        )
+        return {"ok": channel}, 200
+    if 'feed' in data:
+        feed = data['feed']
+        if feed not in user['feeds']:
+            return {'error': f'User {login} not subscribed to feed {feed}'}
+        users.update_one(
+            {'login': login},
+            {'$pull': {'feeds': feed}}
+        )
+        return {"ok": feed}, 200
+    return {'error': 'Bad request'}, 404
 
 
 @app.route('/drop', methods=['DELETE'])

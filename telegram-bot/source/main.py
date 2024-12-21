@@ -238,7 +238,8 @@ def settings_bot(message):
     if not is_started:
         return
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row("/add", "/del")
+    markup.row("/addChannel", "/delChannel")
+    markup.row("/addFeed", "/delFeed")
     markup.row("/getlist", "/getGroups")
     markup.row("/addChannelGroup", "/back_to_main")
 
@@ -257,8 +258,8 @@ def get_title(channel_id):
         return "Неизвестный канал"
 
 
-@bot.message_handler(commands=["add"])
-def add_bot(message):
+@bot.message_handler(commands=["addChannel"])
+def add_channel_bot(message):
     global groups
 
     if not is_started:
@@ -268,7 +269,7 @@ def add_bot(message):
     if len(message_args) != 2:
         bot.send_message(
             user_id,
-            "❌ Некорректные входные данные!\n*Формат:* /add <id канала>",
+            "❌ Некорректные входные данные!\n*Формат:* /addChannel <id канала>",
             parse_mode="Markdown",
         )
         return
@@ -277,7 +278,7 @@ def add_bot(message):
     if title == "Неизвестный канал":
         bot.send_message(user_id, "❌ Некорректное имя канала", parse_mode="Markdown")
         return
-    bot_loop.run_until_complete(users.subscribe(user=user_id, channel=channel_id))
+    bot_loop.run_until_complete(users.subscribe(login=user_id, channel=channel_id))
 
     markup = telebot.types.InlineKeyboardMarkup()
     buttons = [
@@ -297,8 +298,8 @@ def add_bot(message):
     )
 
 
-@bot.message_handler(commands=["del"])
-def del_bot(message):
+@bot.message_handler(commands=["delChannel"])
+def del_channel_bot(message):
     if not is_started:
         return
     user_id = message.from_user.id
@@ -306,7 +307,7 @@ def del_bot(message):
     if len(message_args) != 2:
         bot.send_message(
             user_id,
-            "❌ Некорректные входные данные!\n*Формат:* /del <id канала>",
+            "❌ Некорректные входные данные!\n*Формат:* /delChannel <id канала>",
             parse_mode="Markdown",
         )
         return
@@ -316,7 +317,7 @@ def del_bot(message):
         bot.send_message(user_id, "❌ Некорректное имя канала", parse_mode="Markdown")
         return
     deleted = bot_loop.run_until_complete(
-        users.unsubscribe(user=user_id, channel=channel_id)
+        users.unsubscribe(login=user_id, channel=channel_id)
     )
     if not deleted:
         bot.send_message(
@@ -325,6 +326,67 @@ def del_bot(message):
         return
     bot.send_message(
         user_id, f'✅ Канал "{title}" был удалён из списка.', parse_mode="Markdown"
+    )
+
+
+@bot.message_handler(commands=["addFeed"])
+def add_feed_bot(message):
+    global groups
+
+    if not is_started:
+        return
+    user_id = message.from_user.id
+    message_args = message.text.split()
+    if len(message_args) != 2:
+        bot.send_message(
+            user_id,
+            "❌ Некорректные входные данные!\n*Формат:* /addFeed <feed>",
+            parse_mode="Markdown",
+        )
+        return
+    feed = message_args[1]
+    bot_loop.run_until_complete(users.subscribe(login=user_id, feed=feed))
+
+    markup = telebot.types.InlineKeyboardMarkup()
+    buttons = [
+        telebot.types.InlineKeyboardButton(
+            group_name, callback_data=f"add${feed}${group_name}"
+        )
+        for group_name in groups.keys()
+    ]
+
+    markup.add(*buttons)
+
+    bot.send_message(
+        user_id,
+        f"📂 В какую группу добавить фид *{feed}*?",
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
+
+
+@bot.message_handler(commands=["delFeed"])
+def del_feed_bot(message):
+    if not is_started:
+        return
+    user_id = message.from_user.id
+    message_args = message.text.split()
+    if len(message_args) != 2:
+        bot.send_message(
+            user_id,
+            "❌ Некорректные входные данные!\n*Формат:* /delFeed <feed>",
+            parse_mode="Markdown",
+        )
+        return
+    feed = message_args[1]
+    deleted = bot_loop.run_until_complete(users.unsubscribe(login=user_id, feed=feed))
+    if not deleted:
+        bot.send_message(
+            user_id, f'❌ Фида "{feed}" нет в списке!', parse_mode="Markdown"
+        )
+        return
+    bot.send_message(
+        user_id, f'✅ Фид "{feed}" был удалён из списка.', parse_mode="Markdown"
     )
 
 
