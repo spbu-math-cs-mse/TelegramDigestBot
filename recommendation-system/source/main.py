@@ -179,7 +179,6 @@ def get_wilson_score(likes, dislikes) -> float:
         phat + z * z / (2 * n) - z * sqrt((phat * (1 - phat) + z * z / (4 * n)) / n)
     ) / (1 + z * z / n)
 
-
 async def get_similarity_score(db, text) -> float:
     documents = chroma.similarity_search(text[:512])
     ids = [document.metadata["id"] for document in documents]
@@ -194,8 +193,10 @@ async def get_similarity_score(db, text) -> float:
     ]
     return sum(scores) / len(documents)
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(current_dir, "openai_api_key.txt")
 
-with open("assets/openai_api_key.txt", "r") as f:
+with open(file_path, "r") as f:
     os.environ["OPENAI_API_KEY"] = f.readline().strip()
 
 gpt_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
