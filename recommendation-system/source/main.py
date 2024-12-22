@@ -15,6 +15,7 @@ from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_gigachat.embeddings import GigaChatEmbeddings
 from gigachat import GigaChat
+import requests
 
 DB_PATH = "recommendation-system.db"
 
@@ -29,6 +30,12 @@ client.start()
 
 with open("assets/gigachat.txt", "r") as f:
     gigichat_key = f.readline().strip()
+
+with open("assets/mattermost.txt", "r") as f:
+    mm_token = f.readline()
+
+with open("assets/url.txt", "r") as f:
+    mm_url = f.readline()
 
 chroma = Chroma(
     "recommendation-system",
@@ -145,17 +152,6 @@ async def get_dislikes(db: aiosqlite.Connection, entity_id: int) -> int:
 app = FastAPI(lifespan=lifespan)
 
 
-class Channel(BaseModel):
-    name: str
-
-
-class TGDigestRequest(BaseModel):
-    user: str
-    limit: int
-    offset_date: datetime
-    channels: list[Channel]
-
-
 def get_popularity_score(message) -> int:
     score = 0
     if message.views is not None:
@@ -179,6 +175,7 @@ def get_wilson_score(likes, dislikes) -> float:
         phat + z * z / (2 * n) - z * sqrt((phat * (1 - phat) + z * z / (4 * n)) / n)
     ) / (1 + z * z / n)
 
+
 async def get_similarity_score(db, text) -> float:
     documents = chroma.similarity_search(text[:512])
     ids = [document.metadata["id"] for document in documents]
@@ -193,10 +190,8 @@ async def get_similarity_score(db, text) -> float:
     ]
     return sum(scores) / len(documents)
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-file_path = os.path.join(current_dir, "openai_api_key.txt")
 
-with open(file_path, "r") as f:
+with open("assets/openai_api_key.txt", "r") as f:
     os.environ["OPENAI_API_KEY"] = f.readline().strip()
 
 gpt_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -245,7 +240,18 @@ async def postprocess(result):
     ]
 
 
-async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[Channel]):
+class TGChannel(BaseModel):
+    name: str
+
+
+class TGDigestRequest(BaseModel):
+    user: str
+    limit: int
+    offset_date: datetime
+    channels: list[TGChannel]
+
+
+async def tgdigest_impl(limit: int, offset_date: datetime, channels: list[TGChannel]):
     buffer = []
     async with aiosqlite.connect(DB_PATH) as db:
         for channel in channels:
@@ -376,6 +382,102 @@ async def rssdigest_impl(limit: int, offset_date: datetime, feeds: list[Feed]):
 async def rssdigest(request: RSSDigestRequest):
     try:
         return await rssdigest_impl(request.limit, request.offset_date, request.feeds)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class MMChannel(BaseModel):
+    name: str
+    team: str
+
+
+class MMDigestRequest(BaseModel):
+    user: str
+    limit: int
+    offset_date: datetime
+    channels: list[MMChannel]
+
+
+def get_team_id(team: str) -> str | None:
+    headers = {"Authorization": "Bearer " + mm_token}
+    response = requests.get(mm_url + "/api/v4/teams/name/" + team, headers=headers)
+    if response.status_code != 200:
+        return None
+    data = response.json()
+    return data["id"]
+
+
+def get_channel_id(team_id: str, name: str) -> str | None:
+    headers = {"Authorization": "Bearer " + mm_token}
+    response = requests.get(
+        mm_url + "/api/v4/teams/" + team_id + "/channels/name/" + name, headers=headers
+    )
+    if response.status_code != 200:
+        return None
+    data = response.json()
+    return data["id"]
+
+
+async def mmdigest_impl(limit: int, offset_date: datetime, channels: list[MMChannel]):
+    buffer = []
+    offset = offset_date.astimezone(pytz.UTC)
+    params = {"since": int(offset.timestamp())}
+    headers = {"Authorization": "Bearer " + mm_token}
+    async with aiosqlite.connect(DB_PATH) as db:
+        for channel in channels:
+            team_id = get_team_id(channel.team)
+            channel_id = get_channel_id(team_id, channel.name)
+            response = requests.get(
+                mm_url + "/api/v4/channels/" + channel_id + "/posts",
+                headers=headers,
+                params=params,
+            )
+            if response.status_code != 200:
+                continue
+            data = response.json()
+            for id, value in data["posts"].items():
+                link = (
+                    mm_url + "/" + channel.team + "/channels/" + channel.name + "/" + id
+                )
+                description = value["message"]
+                entity_id = await get_entity(db, link, True)
+                score = (
+                    1.5  # default popularity score
+                    + get_wilson_score(
+                        await get_likes(db, entity_id),
+                        await get_dislikes(db, entity_id),
+                    )
+                    + await get_similarity_score(db, description)
+                )
+                buffer.append(
+                    {
+                        "link": link,
+                        "description": description,
+                        "entity_id": entity_id,
+                        "score": score,
+                    }
+                )
+    buffer.sort(key=lambda x: x["score"], reverse=True)
+    result = buffer[:limit]
+    async with aiosqlite.connect(DB_PATH) as db:
+        for item in result:
+            if item["entity_id"] == 0:
+                item["entity_id"] = await get_entity(db, item["link"])
+                chroma.add_documents(
+                    [
+                        Document(
+                            page_content=item["description"],
+                            metadata={"id": item["entity_id"]},
+                        )
+                    ]
+                )
+    return result
+
+
+@app.get("/mmdigest")
+async def mmdigest(request: MMDigestRequest):
+    try:
+        return await mmdigest_impl(request.limit, request.offset_date, request.channels)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
